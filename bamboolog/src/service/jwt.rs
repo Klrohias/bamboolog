@@ -18,7 +18,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::instrument;
 
-use crate::{entity::user, utils::ApiResponse};
+use crate::{
+    entity::user,
+    utils::{ApiResponse, FailibleOperationExt},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtClaims {
@@ -39,17 +42,18 @@ where
         let TypedHeader(Authorization(bearer)) =
             TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state)
                 .await
-                .map_err(|_| AuthError::InvalidToken)?;
+                .map_err(|_| AuthError)?;
 
         let service = parts
             .extensions
             .get::<JwtService>()
             .expect("JwtService should be configured");
 
-        let token_data = service.decode(bearer.token()).await.map_err(|e| {
-            tracing::info!("Failed to decode jwt: {}", e);
-            AuthError::InvalidToken
-        })?;
+        let token_data = service
+            .decode(bearer.token())
+            .await
+            .traced()
+            .map_err(|_| AuthError)?;
 
         Ok(token_data.claims)
     }
@@ -155,17 +159,12 @@ impl JwtService {
     }
 }
 
-#[derive(Debug)]
-pub enum AuthError {
-    InvalidToken,
-}
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid token")]
+pub struct AuthError;
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        match self {
-            AuthError::InvalidToken => {
-                (StatusCode::UNAUTHORIZED, ApiResponse::unauthorized()).into_response()
-            }
-        }
+        (StatusCode::UNAUTHORIZED, ApiResponse::unauthorized()).into_response()
     }
 }

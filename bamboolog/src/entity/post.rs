@@ -11,6 +11,8 @@ pub struct Model {
     pub title: String,
     pub content: String,
     pub author: i32,
+    #[sea_orm(default_expr = "Expr::current_timestamp()")]
+    pub created_at: DateTimeUtc,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

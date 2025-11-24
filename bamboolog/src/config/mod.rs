@@ -4,3 +4,5 @@ mod dynamic_config;
 pub use dynamic_config::*;
 mod site_config;
 pub use site_config::*;
+mod theme_definition;
+pub use theme_definition::*;

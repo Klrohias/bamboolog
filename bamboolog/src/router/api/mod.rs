@@ -1,10 +1,11 @@
 use axum::{
     Extension, Router,
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::post,
 };
 
 mod posts;
+mod user;
 
 use crate::{
     service::{jwt::JwtClaims, reloader::ServiceReloader},
@@ -14,11 +15,8 @@ use crate::{
 pub fn get_routes() -> Router {
     Router::new()
         .route("/reload", post(reload))
-        .route(
-            "/posts/{id}",
-            get(posts::get_post_content).delete(posts::delete_post),
-        )
-        .route("/posts/", put(posts::put_post))
+        .nest("/posts/", posts::get_routes())
+        .nest("/user/", user::get_routes())
 }
 
 async fn reload(

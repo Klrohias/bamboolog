@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use sea_orm::DatabaseConnection;
 use tracing::instrument;
 
 use crate::{
-    config::config_entries,
+    config::{ApplicationConfiguration, config_entries},
     service::{
         jwt::{JwtService, JwtServiceSettings, JwtServiceState},
-        theme::{ThemeService, ThemeServiceSettings, ThemeServiceState},
+        theme::{ThemeService, ThemeServiceSettings},
     },
     utils::FailibleOperationExt,
 };
@@ -13,6 +15,7 @@ use crate::{
 #[derive(Clone)]
 pub struct ServiceReloader {
     pub database: DatabaseConnection,
+    pub application_configuration: Arc<ApplicationConfiguration>,
     pub jwt_service: JwtService,
     pub theme_service: ThemeService,
 }
@@ -20,11 +23,13 @@ pub struct ServiceReloader {
 impl ServiceReloader {
     pub fn new(
         database: DatabaseConnection,
+        application_configuration: Arc<ApplicationConfiguration>,
         jwt_service: JwtService,
         theme_service: ThemeService,
     ) -> Self {
         Self {
             database,
+            application_configuration,
             jwt_service,
             theme_service,
         }
@@ -57,9 +62,10 @@ impl ServiceReloader {
             .await?
             .ok_or(anyhow::anyhow!("No config for theme service"))?;
 
-        let mut state = ThemeServiceState::default();
-        state.load(&settings)?;
-        self.theme_service.set_state(state).await;
+        let state = self.theme_service.get_state();
+        let mut state = state.write().await;
+        state.load_theme(&settings)?;
+
         Ok(())
     }
 }

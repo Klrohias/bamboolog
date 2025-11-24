@@ -46,16 +46,19 @@ async fn configure_jwt_service(database: &DatabaseConnection) -> JwtService {
 }
 
 #[instrument(skip_all)]
-async fn configure_theme_service(database: &DatabaseConnection) -> ThemeService {
+async fn configure_theme_service(
+    database: &DatabaseConnection,
+    application_configuration: &Arc<ApplicationConfiguration>,
+) -> ThemeService {
     let settings = config_entries::THEME_SERVICE_CONFIG
         .get::<ThemeServiceSettings>(&database)
         .await
         .expect("Failed to load config for theme service")
         .expect("No config for theme service");
 
-    let mut state = ThemeServiceState::default();
+    let mut state = ThemeServiceState::new(application_configuration.clone());
     state
-        .load(&settings)
+        .load_theme(&settings)
         .expect("Failed to load theme service state");
 
     ThemeService::new(state)
@@ -65,12 +68,16 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
     // Configure services
     let database = configure_database(&config).await;
     let jwt_service = configure_jwt_service(&database).await;
-    let theme_service = configure_theme_service(&database).await;
-    let service_reloader =
-        ServiceReloader::new(database.clone(), jwt_service.clone(), theme_service.clone());
+    let theme_service = configure_theme_service(&database, &config).await;
+    let service_reloader = ServiceReloader::new(
+        database.clone(),
+        config.clone(),
+        jwt_service.clone(),
+        theme_service.clone(),
+    );
 
     // Create routes
-    get_routes().layer(
+    get_routes(&config).layer(
         ServiceBuilder::new()
             .layer(Extension(config.clone()))
             .layer(Extension(database))

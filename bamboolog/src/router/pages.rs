@@ -1,6 +1,6 @@
 use axum::{
     Extension, Router,
-    extract::{Path, Request},
+    extract::Path,
     response::{Html, IntoResponse, Response},
     routing::get,
 };
