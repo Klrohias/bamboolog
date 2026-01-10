@@ -8,30 +8,30 @@ use axum::{
 use crate::utils::ApiResponse;
 
 pub trait FailibleOperationExt<T, E> {
-    fn traced(self) -> Result<T, E>;
+    fn traced(self, op: impl FnOnce(&E) -> ()) -> Result<T, E>;
 }
 
 impl<T, E> FailibleOperationExt<T, E> for Result<T, E>
 where
     E: Display,
 {
-    fn traced(self) -> Result<T, E> {
+    fn traced(self, op: impl FnOnce(&E) -> ()) -> Result<T, E> {
         match self {
             Ok(v) => Ok(v),
             Err(e) => {
-                tracing::error!("{}", e);
+                op(&e);
                 Err(e)
             }
         }
     }
 }
 
-pub trait HttpFailibleOperationExt<T> {
+pub trait HttpFailibleOperationExt<T, E> {
     fn response(self) -> Result<T, Response>;
-    fn traced_and_response(self) -> Result<T, Response>;
+    fn traced_and_response(self, op: impl FnOnce(&E) -> ()) -> Result<T, Response>;
 }
 
-impl<T, E> HttpFailibleOperationExt<T> for Result<T, E>
+impl<T, E> HttpFailibleOperationExt<T, E> for Result<T, E>
 where
     E: Display,
 {
@@ -46,11 +46,12 @@ where
         }
     }
 
-    fn traced_and_response(self) -> Result<T, Response> {
+    fn traced_and_response(self, op: impl FnOnce(&E) -> ()) -> Result<T, Response> {
         match self {
             Ok(v) => Ok(v),
             Err(e) => {
-                tracing::error!("{}", e);
+                op(&e);
+
                 Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     ApiResponse::internal_server_error(),

@@ -22,7 +22,9 @@ where
 
     #[instrument(skip_all)]
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let claims = JwtClaims::from_request_parts(parts, state).await.traced()?;
+        let claims = JwtClaims::from_request_parts(parts, state)
+            .await
+            .traced(|e| tracing::error!("{}", e))?;
 
         let database = parts
             .extensions

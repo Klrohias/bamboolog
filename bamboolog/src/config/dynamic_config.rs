@@ -4,15 +4,15 @@ pub mod config_entries {
         ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
         ExprTrait, IntoActiveModel, QueryFilter,
     };
-    use serde::de::DeserializeOwned;
+    use serde::{Serialize, de::DeserializeOwned};
 
     use crate::entity::config_entry;
 
     pub struct ConfigEntry(&'static str, i32);
 
-    pub const JWT_CONFIG: ConfigEntry = ConfigEntry("system", 1);
-    pub const THEME_SERVICE_CONFIG: ConfigEntry = ConfigEntry("system", 2);
-    pub const SITE_CONFIG: ConfigEntry = ConfigEntry("system", 3);
+    pub const JWT_SETTINGS: ConfigEntry = ConfigEntry("system", 1);
+    pub const THEME_SERVICE_SETTINGS: ConfigEntry = ConfigEntry("system", 2);
+    pub const SITE_SETTINGS: ConfigEntry = ConfigEntry("system", 3);
 
     impl ConfigEntry {
         pub async fn get<T>(&self, database: &DatabaseConnection) -> Result<Option<T>, ConfigError>
@@ -23,6 +23,19 @@ pub mod config_entries {
                 None => None,
                 Some(v) => Some(serde_json::from_str(&v)?),
             })
+        }
+
+        pub async fn set<T>(
+            &self,
+            database: &DatabaseConnection,
+            value: Option<T>,
+        ) -> Result<(), ConfigError>
+        where
+            T: Serialize,
+        {
+            self.set_string(database, serde_json::to_string(&value)?)
+                .await?;
+            Ok(())
         }
 
         pub async fn set_string(

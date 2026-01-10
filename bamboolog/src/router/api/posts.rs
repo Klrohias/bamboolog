@@ -41,6 +41,7 @@ pub fn get_routes() -> Router {
             "/{id}",
             get(get_post_content).delete(delete_post).post(edit_post),
         )
+        .route("/{id}/rendered", get(get_rendered_post_content))
         .route("/", put(create_post))
 }
 
@@ -51,13 +52,34 @@ pub async fn get_post_content(
     let post = entity::post::Entity::find_by_id(id)
         .one(&database)
         .await
-        .traced_and_response()?;
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(match post {
         None => {
             ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response()
         }
         Some(post) => ApiResponse::ok(post).into_response(),
+    })
+}
+
+pub async fn get_rendered_post_content(
+    Extension(database): Extension<DatabaseConnection>,
+    Path(id): Path<i32>,
+) -> Result<Response, Response> {
+    let post = entity::post::Entity::find_by_id(id)
+        .one(&database)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+
+    Ok(match post {
+        None => {
+            ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response()
+        }
+        Some(post) => ApiResponse::ok(
+            markdown::to_html_with_options(&post.content, &markdown::Options::gfm())
+                .traced_and_response(|e| tracing::error!("{}", e))?,
+        )
+        .into_response(),
     })
 }
 
@@ -69,14 +91,16 @@ pub async fn delete_post(
     let post = entity::post::Entity::find_by_id(id)
         .one(&database)
         .await
-        .traced_and_response()?;
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     match post {
         None => Err(
             ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response(),
         ),
         Some(post) => {
-            post.delete(&database).await.traced_and_response()?;
+            post.delete(&database)
+                .await
+                .traced_and_response(|e| tracing::error!("{}", e))?;
             Ok(ApiResponse::ok(()).into_response())
         }
     }
@@ -103,7 +127,10 @@ pub async fn create_post(
             .unwrap_or(ActiveValue::NotSet),
     };
 
-    active_model.insert(&database).await.traced_and_response()?;
+    active_model
+        .insert(&database)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(()))
 }
@@ -116,7 +143,7 @@ pub async fn edit_post(
     let old_post = entity::post::Entity::find_by_id(id)
         .one(&database)
         .await
-        .traced_and_response()?
+        .traced_and_response(|e| tracing::error!("{}", e))?
         .ok_or_else(|| ApiResponse::code(StatusCode::NOT_FOUND).into_response())?;
 
     let mut active_model = old_post.into_active_model();
@@ -145,7 +172,10 @@ pub async fn edit_post(
         active_model.name = ActiveValue::Set(new_name);
     }
 
-    active_model.update(&database).await.traced_and_response()?;
+    active_model
+        .update(&database)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(()))
 }

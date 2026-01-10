@@ -10,13 +10,14 @@ bcrypt = "0.15.1"
 chrono = "0.4.38"
 dotenvy = "0.15.7"
 jsonwebtoken = { version = "10.1.0", features = ["aws_lc_rs"] }
-sea-orm = { version = "2.0.0-rc.18", features = [
+sea-orm = { version = "2.0.0-rc.27", features = [
     "runtime-tokio-rustls",
     "macros",
     "schema-sync",
     "entity-registry",
+    "sqlx-sqlite",
 ] }
-serde_json = "1.0.145"
+serde_json = "1.0.149"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["full"] }
 tracing = "0.1.41"
@@ -28,13 +29,13 @@ anyhow = "1.0.100"
 thiserror = "2.0.17"
 tower-http = { version = "0.6.6", features = ["fs"] }
 markdown = "1.0.0"
-tera = "1.20.1"
 mime_guess = "2.0.5"
 tokio-util = { version = "0.7.17", features = ["io"] }
+minijinja = { version = "2.14.0", features = ["loader"] }
 
-[features]
-default = ["postgres"]
-postgres = ["sea-orm/sqlx-postgres"]
-mysql = ["sea-orm/sqlx-mysql"]
-sqlite = ["sea-orm/sqlx-sqlite"]
-full = ["mysql", "postgres", "sqlite"]
+# [features]
+# default = ["sqlite"]
+# postgres = ["sea-orm/sqlx-postgres"]
+# mysql = ["sea-orm/sqlx-mysql"]
+# sqlite = ["sea-orm/sqlx-sqlite"]
+# full = ["mysql", "postgres", "sqlite"]

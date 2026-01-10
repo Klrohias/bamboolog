@@ -23,7 +23,10 @@ async fn reload(
     Extension(reloader): Extension<ServiceReloader>,
     _claims: JwtClaims,
 ) -> Result<Response, Response> {
-    reloader.reload().await.traced_and_response()?;
+    reloader
+        .reload()
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(()).into_response())
 }

@@ -62,14 +62,16 @@ async fn login_user(
         .filter(user::Column::Username.eq(login_user.username))
         .one(&db)
         .await
-        .traced_and_response()?
+        .traced_and_response(|e| tracing::error!("{}", e))?
     {
         Some(user) => {
-            if bcrypt::verify(&login_user.password, &user.password_hash).traced_and_response()? {
+            if bcrypt::verify(&login_user.password, &user.password_hash)
+                .traced_and_response(|e| tracing::error!("{}", e))?
+            {
                 let token = jwt_service
                     .issue(user.clone())
                     .await
-                    .traced_and_response()?;
+                    .traced_and_response(|e| tracing::error!("{}", e))?;
                 Ok(ApiResponse::ok(LoginResponse {
                     user: UserResponse::from(user),
                     token,
@@ -98,7 +100,7 @@ async fn get_me(
         .filter(user::Column::Id.eq(claims.user_id))
         .one(&db)
         .await
-        .traced_and_response()?
+        .traced_and_response(|e| tracing::error!("{}", e))?
     {
         Some(user) => Ok(ApiResponse::ok(UserResponse::from(user)).into_response()),
         None => Err(

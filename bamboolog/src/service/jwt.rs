@@ -52,7 +52,7 @@ where
         let token_data = service
             .decode(bearer.token())
             .await
-            .traced()
+            .traced(|e| tracing::error!("{}", e))
             .map_err(|_| AuthError)?;
 
         Ok(token_data.claims)

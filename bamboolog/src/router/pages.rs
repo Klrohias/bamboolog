@@ -6,7 +6,7 @@ use axum::{
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::json;
-use tera::Context;
+use tracing::instrument;
 
 use crate::{
     entity::post::{Column as PostColumn, Entity as PostEntity},
@@ -21,14 +21,15 @@ pub fn get_routes() -> Router {
         .route("/static/theme/{*path}", get(serve_theme_static))
 }
 
+#[instrument(skip_all)]
 async fn display_home(
     Extension(theme_service): Extension<ThemeService>,
 ) -> Result<Html<String>, Response> {
     Ok(Html(
         theme_service
-            .render("home.html", &Context::default())
+            .render("home", json!({}))
             .await
-            .traced_and_response()?,
+            .traced_and_response(|e| tracing::error!("{}", e))?,
     ))
 }
 
@@ -43,20 +44,20 @@ async fn display_post(
             .filter(PostColumn::Name.eq(id_or_name))
             .one(&database)
             .await
-            .traced_and_response()?,
+            .traced_and_response(|e| tracing::error!("{}", e))?,
         Ok(id) => PostEntity::find_by_id(id)
             .one(&database)
             .await
-            .traced_and_response()?,
+            .traced_and_response(|e| tracing::error!("{}", e))?,
     };
 
     // Really found?
     let post = match post {
         None => {
             return Err(theme_service
-                .render("not-found.html", &Context::default())
+                .render("not-found", json!({}))
                 .await
-                .traced_and_response()?
+                .traced_and_response(|e| tracing::error!("{}", e))?
                 .into_response());
         }
         Some(v) => v,
@@ -64,21 +65,20 @@ async fn display_post(
 
     // Render markdown
     let rendered_content = markdown::to_html_with_options(&post.content, &markdown::Options::gfm())
-        .traced_and_response()?;
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     // Render jinja
     Ok(Html(
         theme_service
             .render(
-                "post.html",
-                &Context::from_value(json!({
+                "post",
+                json!({
                     "content": rendered_content,
                     "post": post
-                }))
-                .traced_and_response()?,
+                }),
             )
             .await
-            .traced_and_response()?,
+            .traced_and_response(|e| tracing::error!("{}", e))?,
     ))
 }
 
@@ -89,5 +89,5 @@ async fn serve_theme_static(
     Ok(theme_service
         .serve_static(path)
         .await
-        .traced_and_response()?)
+        .traced_and_response(|e| tracing::error!("{}", e))?)
 }
