@@ -16,7 +16,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { darkTheme, zhCN, dateZhCN, enUS, dateEnUS } from 'naive-ui'
-import { useSettingsStore } from './stores/settings'
+import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
 

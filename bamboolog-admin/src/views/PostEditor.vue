@@ -30,8 +30,8 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, type FormInst } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import api from '../api'
-import MarkdownEditor from '../components/MarkdownEditor.vue'
+import api from '@/api'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 const { t } = useI18n()
 const route = useRoute()

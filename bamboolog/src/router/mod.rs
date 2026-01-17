@@ -1,19 +1,16 @@
 mod api;
 mod pages;
+mod admin;
 
 use std::sync::Arc;
 
 use axum::Router;
-use tower_http::services::ServeDir;
 
 use crate::config::ApplicationConfiguration;
 
-pub fn get_routes(config: &Arc<ApplicationConfiguration>) -> Router {
+pub fn get_routes(_config: &Arc<ApplicationConfiguration>) -> Router {
     Router::new()
-        .nest_service(
-            "/admin",
-            ServeDir::new(config.asset_dir.join("public/admin")),
-        )
+        .nest("/admin", admin::get_routes())
         .nest("/api", api::get_routes())
         .merge(pages::get_routes())
 }

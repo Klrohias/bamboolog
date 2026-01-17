@@ -22,7 +22,7 @@ import { h, onMounted, ref, reactive, computed } from 'vue'
 import { NButton, NSpace, useMessage, useDialog, type DataTableColumns } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import api from '../api'
+import api from '@/api'
 
 const { t } = useI18n()
 const router = useRouter()

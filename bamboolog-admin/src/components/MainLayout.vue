@@ -64,11 +64,13 @@ import {
   SunnyOutline,
   LanguageOutline
 } from '@vicons/ionicons5'
-import { setAuthToken } from '../api'
-import { useSettingsStore } from '../stores/settings'
+import { setAuthToken } from '@/api'
+import { useSettingsStore } from '@/stores/settings'
+import { useUserStore } from '@/stores/user'
 
 const { t, locale } = useI18n()
 const settingsStore = useSettingsStore()
+const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
 const activeKey = ref<string | null>(null)
@@ -117,6 +119,7 @@ function handleLanguageSelect(key: 'zh-CN' | 'en-US') {
 }
 
 function handleLogout() {
+  userStore.logout()
   setAuthToken(null)
   router.push('/login')
 }

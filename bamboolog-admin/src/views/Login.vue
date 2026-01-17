@@ -63,11 +63,13 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { PersonOutline, LockClosedOutline, SunnyOutline, MoonOutline, LanguageOutline } from '@vicons/ionicons5'
-import api, { setAuthToken } from '../api'
-import { useSettingsStore } from '../stores/settings'
+import api, { setAuthToken } from '@/api'
+import { useSettingsStore } from '@/stores/settings'
+import { useUserStore } from '@/stores/user'
 
 const { t, locale } = useI18n()
 const settingsStore = useSettingsStore()
+const userStore = useUserStore()
 const router = useRouter()
 const msg = useMessage()
 const loading = ref(false)
@@ -87,6 +89,7 @@ async function doLogin() {
     })
     const token = data.data.token
     setAuthToken(token)
+    await userStore.fetchMe()
     msg.success(t('common.login') + ' ' + t('common.success'))
     router.push('/posts')
   } catch (e: any) {

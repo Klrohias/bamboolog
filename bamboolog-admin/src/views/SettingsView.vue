@@ -29,7 +29,7 @@
 import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import api from '../api'
+import api from '@/api'
 
 const { t } = useI18n()
 const message = useMessage()

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import router from './router'
+import router from '@/router'
 
 const baseURL = import.meta.env.VITE_API_BASE || '/api'
 
@@ -22,8 +22,15 @@ export function setAuthToken(token: string | null) {
 
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
         if (error.response && error.response.status === 401) {
+            try {
+                const { useUserStore } = await import('@/stores/user')
+                const userStore = useUserStore()
+                userStore.logout()
+            } catch (e) {
+                // Ignore if store cannot be loaded
+            }
             setAuthToken(null)
             router.push('/login')
         }

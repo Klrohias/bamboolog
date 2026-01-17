@@ -92,7 +92,7 @@ async fn login_user(
 #[instrument(skip(db))]
 async fn get_me(
     Extension(db): Extension<DatabaseConnection>,
-    Extension(claims): Extension<JwtClaims>,
+    claims: JwtClaims,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
     match user::Entity::find()
         .filter(user::Column::Id.eq(claims.user_id))
