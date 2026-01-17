@@ -206,6 +206,26 @@ impl ThemeService {
         self.0.clone()
     }
 
+    pub async fn list_themes(&self) -> Result<Vec<String>, io::Error> {
+        let state = self.0.read().await;
+        let theme_root = state.application_configuration.asset_dir.join("themes");
+        let mut themes = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(theme_root) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if entry.file_type()?.is_dir() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            themes.push(name.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(themes)
+    }
+
     pub async fn render(
         &self,
         name: impl AsRef<str>,

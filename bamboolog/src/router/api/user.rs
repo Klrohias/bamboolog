@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     entity::user,
     service::jwt::{JwtClaims, JwtService},
@@ -55,7 +53,7 @@ struct LoginUser {
 #[instrument(skip(db, jwt_service))]
 async fn login_user(
     Extension(db): Extension<DatabaseConnection>,
-    Extension(jwt_service): Extension<Arc<JwtService>>,
+    Extension(jwt_service): Extension<JwtService>,
     Json(login_user): Json<LoginUser>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
     match user::Entity::find()

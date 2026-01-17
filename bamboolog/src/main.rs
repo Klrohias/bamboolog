@@ -14,7 +14,7 @@ use axum::{Extension, Router};
 use dotenvy::dotenv;
 use sea_orm::{Database, DatabaseConnection};
 use std::{
-    env::{Args, args},
+    env::args,
     net::SocketAddr,
     sync::Arc,
 };
@@ -145,7 +145,6 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
     let theme_service = configure_theme_service(&database, &config, &site_settings_service).await;
     let service_reloader = ServiceReloader::new(
         database.clone(),
-        config.clone(),
         jwt_service.clone(),
         theme_service.clone(),
         site_settings_service.clone(),
@@ -162,25 +161,6 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
     )
 }
 
-async fn action_dispatch(mut args: Args, config: &Arc<ApplicationConfiguration>) -> bool {
-    if args.any(|x| x == "sync-entities-ef") {
-        action_sync_entities(config).await;
-        return true;
-    }
-
-    false
-}
-
-async fn action_sync_entities(config: &Arc<ApplicationConfiguration>) {
-    tracing::info!("Sync entities (Entity first)");
-    let db = configure_database(&config).await;
-
-    db.get_schema_registry("bamboolog::entity::*")
-        .sync(&db)
-        .await
-        .expect("Failed to sync schemas");
-}
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -188,7 +168,7 @@ async fn main() {
 
     let config = Arc::new(ApplicationConfiguration::load().expect("Failed to load configuration"));
 
-    if action_dispatch(args(), &config).await {
+    if bamboolog::maintenance::action_dispatch(args(), &config).await {
         return;
     }
 

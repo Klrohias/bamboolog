@@ -1,4 +1,5 @@
 import axios from 'axios'
+import router from './router'
 
 const baseURL = import.meta.env.VITE_API_BASE || '/api'
 
@@ -18,6 +19,17 @@ export function setAuthToken(token: string | null) {
         localStorage.removeItem('token')
     }
 }
+
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response && error.response.status === 401) {
+            setAuthToken(null)
+            router.push('/login')
+        }
+        return Promise.reject(error)
+    }
+)
 
 const saved = localStorage.getItem('token')
 if (saved) setAuthToken(saved)

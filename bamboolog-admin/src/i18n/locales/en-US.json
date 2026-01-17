@@ -1,0 +1,53 @@
+{
+    "common": {
+        "login": "Login",
+        "logout": "Logout",
+        "settings": "Settings",
+        "posts": "Posts",
+        "dashboard": "Dashboard",
+        "admin": "Admin",
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit",
+        "create": "Create",
+        "theme": "Theme",
+        "language": "Language",
+        "dark": "Dark",
+        "light": "Light",
+        "success": "Success",
+        "error": "Error",
+        "confirm": "Confirm",
+        "confirm_delete": "Are you sure you want to delete?"
+    },
+    "posts": {
+        "title": "Title",
+        "slug": "Slug",
+        "status": "Status",
+        "created_at": "Created At",
+        "actions": "Actions",
+        "new_post": "New Post",
+        "edit_post": "Edit Post",
+        "content": "Content",
+        "update_success": "Post updated",
+        "create_success": "Post created",
+        "delete_success": "Post deleted",
+        "fetch_failed": "Failed to fetch post"
+    },
+    "login": {
+        "username": "Username",
+        "password": "Password",
+        "submit": "Login",
+        "welcome": "Welcome back",
+        "failed": "Login failed"
+    },
+    "settings": {
+        "site_settings": "Site Settings",
+        "theme_settings": "Theme Settings",
+        "site_name": "Site Name",
+        "base_url": "Base URL",
+        "current_theme": "Current Theme",
+        "save_success": "Settings saved",
+        "fetch_failed": "Failed to fetch settings"
+    }
+}

@@ -5,6 +5,7 @@ use axum::{
 };
 
 mod posts;
+mod settings;
 mod user;
 
 use crate::{
@@ -17,6 +18,7 @@ pub fn get_routes() -> Router {
         .route("/reload", post(reload))
         .nest("/posts/", posts::get_routes())
         .nest("/user/", user::get_routes())
+        .nest("/settings/", settings::get_routes())
 }
 
 async fn reload(

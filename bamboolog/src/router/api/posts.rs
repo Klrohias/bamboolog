@@ -3,7 +3,7 @@ use axum::{
     extract::Path,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, put},
+    routing::get,
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait, IntoActiveModel, ModelTrait,
@@ -42,7 +42,18 @@ pub fn get_routes() -> Router {
             get(get_post_content).delete(delete_post).post(edit_post),
         )
         .route("/{id}/rendered", get(get_rendered_post_content))
-        .route("/", put(create_post))
+        .route("/", get(list_posts).put(create_post))
+}
+
+pub async fn list_posts(
+    Extension(database): Extension<DatabaseConnection>,
+) -> Result<ApiResponse<Vec<entity::post::Model>>, Response> {
+    let posts = entity::post::Entity::find()
+        .all(&database)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+
+    Ok(ApiResponse::ok(posts))
 }
 
 pub async fn get_post_content(

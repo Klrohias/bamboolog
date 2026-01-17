@@ -1,0 +1,53 @@
+{
+    "common": {
+        "login": "登录",
+        "logout": "注销",
+        "settings": "设置",
+        "posts": "文章",
+        "dashboard": "控制台",
+        "admin": "管理员",
+        "save": "保存",
+        "cancel": "取消",
+        "delete": "删除",
+        "edit": "编辑",
+        "create": "创建",
+        "theme": "主题",
+        "language": "语言",
+        "dark": "暗色",
+        "light": "亮色",
+        "success": "成功",
+        "error": "错误",
+        "confirm": "确定",
+        "confirm_delete": "确定要删除吗？"
+    },
+    "posts": {
+        "title": "标题",
+        "slug": "别名",
+        "status": "状态",
+        "created_at": "创建时间",
+        "actions": "操作",
+        "new_post": "新文章",
+        "edit_post": "编辑文章",
+        "content": "内容",
+        "update_success": "文章已更新",
+        "create_success": "文章已创建",
+        "delete_success": "文章已删除",
+        "fetch_failed": "获取文章失败"
+    },
+    "login": {
+        "username": "用户名",
+        "password": "密码",
+        "submit": "登录",
+        "welcome": "欢迎回来",
+        "failed": "登录失败"
+    },
+    "settings": {
+        "site_settings": "站点设置",
+        "theme_settings": "主题设置",
+        "site_name": "站点名称",
+        "base_url": "基本 URL",
+        "current_theme": "当前主题",
+        "save_success": "设置已保存",
+        "fetch_failed": "获取设置失败"
+    }
+}

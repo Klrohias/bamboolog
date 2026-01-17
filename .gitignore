@@ -25,3 +25,10 @@ target
 
 # For test purpose, ignore something
 /themes/
+
+# File for agent
+AGENTS.md
+GEMINI.md
+
+# macOS
+.DS_Store
