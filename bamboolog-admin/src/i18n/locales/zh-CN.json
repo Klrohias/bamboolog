@@ -18,7 +18,8 @@
         "success": "成功",
         "error": "错误",
         "confirm": "确定",
-        "confirm_delete": "确定要删除吗？"
+        "confirm_delete": "确定要删除吗？",
+        "search": "搜索"
     },
     "posts": {
         "title": "标题",

@@ -18,7 +18,8 @@
         "success": "Success",
         "error": "Error",
         "confirm": "Confirm",
-        "confirm_delete": "Are you sure you want to delete?"
+        "confirm_delete": "Are you sure you want to delete?",
+        "search": "Search"
     },
     "posts": {
         "title": "Title",
