@@ -11,7 +11,7 @@ use tracing::instrument;
 use crate::{
     entity::post::{Column as PostColumn, Entity as PostEntity},
     service::theme::ThemeService,
-    utils::HttpFailibleOperationExt,
+    utils::HttpFailibleOperationExts,
 };
 
 pub fn get_routes() -> Router {

@@ -7,11 +7,11 @@ use axum::{
 
 use crate::utils::ApiResponse;
 
-pub trait FailibleOperationExt<T, E> {
+pub trait FailibleOperationExts<T, E> {
     fn traced(self, op: impl FnOnce(&E) -> ()) -> Result<T, E>;
 }
 
-impl<T, E> FailibleOperationExt<T, E> for Result<T, E>
+impl<T, E> FailibleOperationExts<T, E> for Result<T, E>
 where
     E: Display,
 {
@@ -26,12 +26,12 @@ where
     }
 }
 
-pub trait HttpFailibleOperationExt<T, E> {
+pub trait HttpFailibleOperationExts<T, E> {
     fn response(self) -> Result<T, Response>;
     fn traced_and_response(self, op: impl FnOnce(&E) -> ()) -> Result<T, Response>;
 }
 
-impl<T, E> HttpFailibleOperationExt<T, E> for Result<T, E>
+impl<T, E> HttpFailibleOperationExts<T, E> for Result<T, E>
 where
     E: Display,
 {

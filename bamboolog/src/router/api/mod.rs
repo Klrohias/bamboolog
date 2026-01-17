@@ -9,7 +9,7 @@ mod user;
 
 use crate::{
     service::{jwt::JwtClaims, reloader::ServiceReloader},
-    utils::{ApiResponse, HttpFailibleOperationExt},
+    utils::{ApiResponse, HttpFailibleOperationExts},
 };
 
 pub fn get_routes() -> Router {

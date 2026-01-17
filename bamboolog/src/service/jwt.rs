@@ -20,7 +20,7 @@ use tracing::instrument;
 
 use crate::{
     entity::user,
-    utils::{ApiResponse, FailibleOperationExt},
+    utils::{ApiResponse, FailibleOperationExts},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

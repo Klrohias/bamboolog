@@ -10,7 +10,7 @@ use crate::{
         site_settings::SiteSettingsService,
         theme::{ThemeService, ThemeServiceSettings},
     },
-    utils::FailibleOperationExt,
+    utils::FailibleOperationExts,
 };
 
 #[derive(Clone)]

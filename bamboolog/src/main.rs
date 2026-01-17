@@ -21,10 +21,11 @@ use std::{
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tracing::instrument;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 fn configure_tracing() {
     tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env())
         .with(tracing_subscriber::fmt::layer())
         .init();
 }
@@ -127,7 +128,7 @@ async fn configure_site_settings_service(database: &DatabaseConnection) -> SiteS
             SiteSettings::default()
         }
         Ok(None) => {
-            tracing::warn!("No site settings, and it wil use a default settings.");
+            tracing::warn!("No site settings, and it will use a default settings.");
             SiteSettings::default()
         }
         Ok(Some(v)) => v,
@@ -198,7 +199,8 @@ async fn main() {
         .as_str()
         .parse()
         .expect("Invalid listen_addr");
-    println!("Listening on {}", addr);
+
+    tracing::info!("Listening on {}", addr);
 
     let listener = TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

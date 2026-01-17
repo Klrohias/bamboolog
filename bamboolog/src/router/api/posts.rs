@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::{
     entity,
     service::{jwt::JwtClaims, user::User},
-    utils::{ApiResponse, HttpFailibleOperationExt},
+    utils::{ApiResponse, HttpFailibleOperationExts},
 };
 
 #[derive(Debug, Deserialize)]

@@ -8,7 +8,6 @@ use axum::response::Response;
 use axum_extra::response::FileStream;
 use minijinja::{Environment, Value};
 use serde::{Deserialize, Serialize};
-use tera::Error as TeraError;
 use tokio::fs::File;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -17,7 +16,7 @@ use tracing::instrument;
 
 use crate::config::ApplicationConfiguration;
 use crate::service::site_settings::SiteSettingsService;
-use crate::utils::FailibleOperationExt;
+use crate::utils::FailibleOperationExts;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ThemeManifest {
@@ -139,7 +138,7 @@ impl ThemeServiceState {
         if !fs::exists(&layouts_root)? {
             return Err(StateLoadError::BrokenTheme(settings.current.to_owned()));
         }
-        Self::load_layouts(layouts_root, &mut self.renderer)?;
+        Self::load_layouts(layouts_root, &mut self.renderer);
 
         // Check static
         let static_root = theme_root.join("static");
@@ -155,10 +154,7 @@ impl ThemeServiceState {
         Ok(())
     }
 
-    fn load_layouts(
-        layouts_root: PathBuf,
-        renderer: &mut Environment<'_>,
-    ) -> Result<(), TeraError> {
+    fn load_layouts(layouts_root: PathBuf, renderer: &mut Environment<'_>) {
         renderer.set_loader(move |path| {
             let path = layouts_root.join(path);
             if !path.starts_with(&layouts_root) {
@@ -176,7 +172,6 @@ impl ThemeServiceState {
 
             Ok(content)
         });
-        Ok(())
     }
 }
 
@@ -190,9 +185,6 @@ pub enum StateLoadError {
 
     #[error(transparent)]
     IoError(#[from] io::Error),
-
-    #[error(transparent)]
-    TeraError(#[from] TeraError),
 
     #[error(transparent)]
     TomlError(#[from] toml::de::Error),
@@ -264,9 +256,6 @@ pub enum StaticServingError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ThemeRenderError {
-    #[error(transparent)]
-    TeraError(#[from] TeraError),
-
     #[error(transparent)]
     JinjaError(#[from] minijinja::Error),
 }

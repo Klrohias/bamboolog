@@ -9,7 +9,7 @@ use tracing::instrument;
 use crate::{
     entity::user,
     service::jwt::{AuthError, JwtClaims},
-    utils::{ApiResponse, FailibleOperationExt},
+    utils::{ApiResponse, FailibleOperationExts},
 };
 
 pub struct User(pub user::Model);

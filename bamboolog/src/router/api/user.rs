@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     entity::user,
     service::jwt::{JwtClaims, JwtService},
-    utils::{ApiResponse, HttpFailibleOperationExt},
+    utils::{ApiResponse, HttpFailibleOperationExts},
 };
 use axum::{
     Extension, Json, Router,
