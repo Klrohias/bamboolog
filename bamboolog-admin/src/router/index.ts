@@ -17,6 +17,7 @@ const routes = [
       { path: 'posts/new', component: PostEditor, name: 'New Post' },
       { path: 'posts/edit/:id', component: PostEditor, name: 'Edit Post' },
       { path: 'settings', component: SettingsView, name: 'Settings' },
+      { path: 'profile', component: () => import('@/views/UserProfile.vue'), name: 'UserProfile' },
     ]
   }
 ]

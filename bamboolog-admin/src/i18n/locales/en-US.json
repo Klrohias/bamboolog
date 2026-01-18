@@ -19,7 +19,9 @@
         "error": "Error",
         "confirm": "Confirm",
         "confirm_delete": "Are you sure you want to delete?",
-        "search": "Search"
+        "search": "Search",
+        "profile": "Profile",
+        "changePassword": "Change Password"
     },
     "posts": {
         "title": "Title",
@@ -50,5 +52,24 @@
         "current_theme": "Current Theme",
         "save_success": "Settings saved",
         "fetch_failed": "Failed to fetch settings"
+    },
+    "profile": {
+        "basicInfo": "Basic Info",
+        "security": "Security",
+        "username": "Username",
+        "nickname": "Nickname",
+        "nicknamePlaceholder": "Enter your nickname",
+        "nicknameRequired": "Nickname is required",
+        "oldPassword": "Old Password",
+        "oldPasswordPlaceholder": "Enter current password",
+        "oldPasswordRequired": "Current password is required",
+        "newPassword": "New Password",
+        "newPasswordPlaceholder": "Enter new password",
+        "newPasswordRequired": "New password is required",
+        "passwordMinLength": "Password must be at least 6 characters",
+        "confirmPassword": "Confirm Password",
+        "confirmPasswordPlaceholder": "Confirm new password",
+        "confirmPasswordRequired": "Please confirm your new password",
+        "passwordMismatch": "Passwords do not match"
     }
 }

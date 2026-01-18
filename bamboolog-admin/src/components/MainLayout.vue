@@ -42,7 +42,14 @@
               </template>
             </n-button>
           </n-dropdown>
-          <n-button @click="handleLogout" ghost>{{ $t('common.logout') }}</n-button>
+          <n-dropdown :options="userOptions" @select="handleUserSelect">
+            <n-button quaternary>
+              <template #icon>
+                <n-icon><person-outline /></n-icon>
+              </template>
+              {{ userStore.user?.nickname || userStore.user?.username || 'User' }}
+            </n-button>
+          </n-dropdown>
         </n-space>
       </n-layout-header>
       <n-layout-content content-style="padding: 24px;">
@@ -62,7 +69,9 @@ import {
   SettingsOutline,
   MoonOutline,
   SunnyOutline,
-  LanguageOutline
+  LanguageOutline,
+  PersonOutline,
+  LogOutOutline
 } from '@vicons/ionicons5'
 import { setAuthToken } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
@@ -97,6 +106,19 @@ const languageOptions = [
   { label: 'English', key: 'en-US' }
 ]
 
+const userOptions = computed(() => [
+  {
+    label: t('common.profile'),
+    key: 'profile',
+    icon: renderIcon(PersonOutline)
+  },
+  {
+    label: t('common.logout'),
+    key: 'logout',
+    icon: renderIcon(LogOutOutline)
+  }
+])
+
 const currentRouteLabel = computed(() => {
   if (activeKey.value === 'posts') return t('common.posts')
   if (activeKey.value === 'settings') return t('common.settings')
@@ -116,6 +138,14 @@ watch(
 function handleLanguageSelect(key: 'zh-CN' | 'en-US') {
   settingsStore.locale = key
   locale.value = key
+}
+
+function handleUserSelect(key: string) {
+  if (key === 'profile') {
+    router.push('/profile')
+  } else if (key === 'logout') {
+    handleLogout()
+  }
 }
 
 function handleLogout() {

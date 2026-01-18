@@ -19,6 +19,12 @@ export const useUserStore = defineStore('user', () => {
         }
     }
 
+    async function updateProfile(payload: any) {
+        const { data } = await api.post('/user/me', payload)
+        user.value = data.data
+        return data.data
+    }
+
     function logout() {
         user.value = null
         // setAuthToken(null) will be called by whatever calls logout
@@ -29,6 +35,7 @@ export const useUserStore = defineStore('user', () => {
         user,
         initialized,
         fetchMe,
-        logout
+        logout,
+        updateProfile
     }
 })

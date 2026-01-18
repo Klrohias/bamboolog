@@ -19,7 +19,9 @@
         "error": "错误",
         "confirm": "确定",
         "confirm_delete": "确定要删除吗？",
-        "search": "搜索"
+        "search": "搜索",
+        "profile": "个人资料",
+        "changePassword": "修改密码"
     },
     "posts": {
         "title": "标题",
@@ -50,5 +52,24 @@
         "current_theme": "当前主题",
         "save_success": "设置已保存",
         "fetch_failed": "获取设置失败"
+    },
+    "profile": {
+        "basicInfo": "基本信息",
+        "security": "安全设置",
+        "username": "用户名",
+        "nickname": "昵称",
+        "nicknamePlaceholder": "请输入昵称",
+        "nicknameRequired": "昵称不能为空",
+        "oldPassword": "旧密码",
+        "oldPasswordPlaceholder": "请输入当前密码",
+        "oldPasswordRequired": "当前密码不能为空",
+        "newPassword": "新密码",
+        "newPasswordPlaceholder": "请输入新密码",
+        "newPasswordRequired": "新密码不能为空",
+        "passwordMinLength": "密码长度不能少于 6 位",
+        "confirmPassword": "确认密码",
+        "confirmPasswordPlaceholder": "请再次输入新密码",
+        "confirmPasswordRequired": "请确认新密码",
+        "passwordMismatch": "两次输入的密码不一致"
     }
 }
