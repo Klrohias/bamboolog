@@ -21,7 +21,9 @@
         "confirm_delete": "Are you sure you want to delete?",
         "search": "Search",
         "profile": "Profile",
-        "changePassword": "Change Password"
+        "changePassword": "Change Password",
+        "attachments": "Attachments",
+        "storage_engine": "Storage Engine"
     },
     "posts": {
         "title": "Title",
@@ -71,5 +73,33 @@
         "confirmPasswordPlaceholder": "Confirm new password",
         "confirmPasswordRequired": "Please confirm your new password",
         "passwordMismatch": "Passwords do not match"
+    },
+    "attachments": {
+        "title": "Attachments",
+        "upload": "Upload",
+        "upload_success": "Upload successful",
+        "upload_failed": "Upload failed",
+        "delete_success": "Attachment deleted",
+        "delete_failed": "Failed to delete attachment",
+        "fetch_failed": "Failed to fetch attachments",
+        "copy_success": "Link copied",
+        "select_storage": "Select Storage Engine",
+        "drag_or_click": "Click or drag file to this area to upload",
+        "filter_mime": "MIME Type",
+        "filter_storage": "Storage Engine",
+        "upload_modal_title": "Upload File",
+        "created_at": "Created At",
+        "actions": "Actions",
+        "preview": "Preview"
+    },
+    "storage_engine": {
+        "title": "Storage Engines",
+        "create": "Create",
+        "actions": "Actions",
+        "edit": "Edit",
+        "delete": "Delete",
+        "comments": "Comments",
+        "type": "Type",
+        "name": "Name"
     }
 }

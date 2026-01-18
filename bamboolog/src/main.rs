@@ -13,11 +13,7 @@ use bamboolog::{
 use axum::{Extension, Router};
 use dotenvy::dotenv;
 use sea_orm::{Database, DatabaseConnection};
-use std::{
-    env::args,
-    net::SocketAddr,
-    sync::Arc,
-};
+use std::{env::args, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tracing::instrument;

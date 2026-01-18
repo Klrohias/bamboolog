@@ -17,6 +17,8 @@ const routes = [
       { path: 'posts/new', component: PostEditor, name: 'New Post' },
       { path: 'posts/edit/:id', component: PostEditor, name: 'Edit Post' },
       { path: 'settings', component: SettingsView, name: 'Settings' },
+      { path: 'attachments', component: () => import('@/views/AttachmentsView.vue'), name: 'Attachments' },
+      { path: 'storage-engines', component: () => import('@/views/StorageEnginesView.vue'), name: 'StorageEngines' },
       { path: 'profile', component: () => import('@/views/UserProfile.vue'), name: 'UserProfile' },
     ]
   }

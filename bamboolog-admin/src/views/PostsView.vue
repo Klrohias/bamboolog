@@ -33,7 +33,7 @@ import { h, onMounted, ref, reactive, computed } from 'vue'
 import { NButton, NSpace, NInput, useMessage, useDialog, type DataTableColumns } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import api from '@/api'
+import { postsApi, type PostListParams } from '@/api/posts'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -60,7 +60,8 @@ const pagination = reactive({
   pageSizes: [10, 20, 50]
 })
 
-const columns = computed<DataTableColumns<any>>(() => [
+// ... columns definitions ...
+const columns = computed(() => [
   { title: 'ID', key: 'id', width: 80, sorter: true, sortOrder: sorter.columnKey === 'id' ? sorter.order : false },
   { title: t('posts.title'), key: 'title', sorter: true, sortOrder: sorter.columnKey === 'title' ? sorter.order : false },
   { title: t('posts.slug'), key: 'name', sorter: true, sortOrder: sorter.columnKey === 'name' ? sorter.order : false },
@@ -104,12 +105,12 @@ const columns = computed<DataTableColumns<any>>(() => [
       )
     }
   }
-])
+] as DataTableColumns<any>)
 
 async function fetchPosts() {
   loading.value = true
   try {
-    const params: any = {
+    const params: PostListParams = {
       page: pagination.page,
       page_size: pagination.pageSize,
       sort_by: sorter.columnKey,
@@ -118,8 +119,8 @@ async function fetchPosts() {
     if (filters.title) params.title = filters.title
     if (filters.name) params.name = filters.name
 
-    const { data } = await api.get('/posts/', { params })
-    posts.value = data.data.posts
+    const { data } = await postsApi.list(params)
+    posts.value = data.data.posts as any
     pagination.itemCount = data.data.total
   } catch (e: any) {
     message.error(e.response?.data?.message || t('posts.fetch_failed'))
@@ -163,7 +164,7 @@ async function handleDelete(id: number) {
     negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       try {
-        await api.delete(`/posts/${id}`)
+        await postsApi.delete(id)
         message.success(t('posts.delete_success'))
         fetchPosts()
       } catch (e: any) {

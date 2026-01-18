@@ -1,6 +1,6 @@
+mod admin;
 mod api;
 mod pages;
-mod admin;
 
 use std::sync::Arc;
 

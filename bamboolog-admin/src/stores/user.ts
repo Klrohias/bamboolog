@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import api from '@/api'
+import { userApi } from '@/api/user'
 
 export const useUserStore = defineStore('user', () => {
     const user = ref<any>(null)
@@ -8,7 +8,7 @@ export const useUserStore = defineStore('user', () => {
 
     async function fetchMe() {
         try {
-            const { data } = await api.get('/user/me')
+            const { data } = await userApi.getMe()
             user.value = data.data
             return true
         } catch (e) {
@@ -20,7 +20,7 @@ export const useUserStore = defineStore('user', () => {
     }
 
     async function updateProfile(payload: any) {
-        const { data } = await api.post('/user/me', payload)
+        const { data } = await userApi.updateProfile(payload)
         user.value = data.data
         return data.data
     }

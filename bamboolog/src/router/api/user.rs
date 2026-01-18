@@ -9,7 +9,9 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -130,8 +132,10 @@ async fn update_me(
     {
         Some(u) => u.into_active_model(),
         None => {
-            return Err(ApiResponse::code_and_message(StatusCode::NOT_FOUND, "User not found")
-                .into_response())
+            return Err(
+                ApiResponse::code_and_message(StatusCode::NOT_FOUND, "User not found")
+                    .into_response(),
+            );
         }
     };
 
@@ -155,11 +159,11 @@ async fn update_me(
             .traced_and_response(|e| tracing::error!("{}", e))?;
         user.password_hash = sea_orm::ActiveValue::Set(new_hash);
     } else if req.new_password.is_some() || req.old_password.is_some() {
-         return Err(ApiResponse::code_and_message(
-                StatusCode::BAD_REQUEST,
-                "Both old and new passwords are required to change password",
-            )
-            .into_response());
+        return Err(ApiResponse::code_and_message(
+            StatusCode::BAD_REQUEST,
+            "Both old and new passwords are required to change password",
+        )
+        .into_response());
     }
 
     let updated = user
@@ -169,4 +173,3 @@ async fn update_me(
 
     Ok(ApiResponse::ok(UserResponse::from(updated)).into_response())
 }
-

@@ -1,29 +1,18 @@
 <template>
   <n-layout has-sider position="absolute" style="height: 100vh">
-    <n-layout-sider
-      bordered
-      collapse-mode="width"
-      :collapsed-width="64"
-      :width="240"
-      :collapsed="settingsStore.collapsed"
-      show-trigger
-      @collapse="settingsStore.collapsed = true"
-      @expand="settingsStore.collapsed = false"
-    >
+    <n-layout-sider bordered collapse-mode="width" :collapsed-width="64" :width="240"
+      :collapsed="settingsStore.collapsed" show-trigger @collapse="settingsStore.collapsed = true"
+      @expand="settingsStore.collapsed = false">
       <div class="logo">
         <span v-if="!settingsStore.collapsed">Bamboolog Admin</span>
         <span v-else>B</span>
       </div>
-      <n-menu
-        :collapsed="settingsStore.collapsed"
-        :collapsed-width="64"
-        :collapsed-icon-size="22"
-        :options="menuOptions"
-        v-model:value="activeKey"
-      />
+      <n-menu :collapsed="settingsStore.collapsed" :collapsed-width="64" :collapsed-icon-size="22"
+        :options="menuOptions" v-model:value="activeKey" />
     </n-layout-sider>
     <n-layout>
-      <n-layout-header bordered style="padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between">
+      <n-layout-header bordered
+        style="padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between">
         <n-breadcrumb>
           <n-breadcrumb-item>{{ $t('common.admin') }}</n-breadcrumb-item>
           <n-breadcrumb-item>{{ currentRouteLabel }}</n-breadcrumb-item>
@@ -71,7 +60,9 @@ import {
   SunnyOutline,
   LanguageOutline,
   PersonOutline,
-  LogOutOutline
+  LogOutOutline,
+  ImageOutline,
+  CloudOutline
 } from '@vicons/ionicons5'
 import { setAuthToken } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
@@ -98,6 +89,16 @@ const menuOptions = computed<MenuOption[]>(() => [
     label: () => h(RouterLink, { to: '/settings' }, { default: () => t('common.settings') }),
     key: 'settings',
     icon: renderIcon(SettingsOutline)
+  },
+  {
+    label: () => h(RouterLink, { to: '/attachments' }, { default: () => t('common.attachments') }),
+    key: 'attachments',
+    icon: renderIcon(ImageOutline)
+  },
+  {
+    label: () => h(RouterLink, { to: '/storage-engines' }, { default: () => t('common.storage_engine') }),
+    key: 'storage-engines',
+    icon: renderIcon(CloudOutline)
   }
 ])
 
@@ -122,6 +123,8 @@ const userOptions = computed(() => [
 const currentRouteLabel = computed(() => {
   if (activeKey.value === 'posts') return t('common.posts')
   if (activeKey.value === 'settings') return t('common.settings')
+  if (activeKey.value === 'attachments') return t('common.attachments')
+  if (activeKey.value === 'storage-engines') return 'Storage'
   return t('common.dashboard')
 })
 
@@ -130,6 +133,8 @@ watch(
   (path) => {
     if (path.startsWith('/posts')) activeKey.value = 'posts'
     else if (path.startsWith('/settings')) activeKey.value = 'settings'
+    else if (path.startsWith('/attachments')) activeKey.value = 'attachments'
+    else if (path.startsWith('/storage-engines')) activeKey.value = 'storage-engines'
     else activeKey.value = null
   },
   { immediate: true }
@@ -167,4 +172,3 @@ function handleLogout() {
   white-space: nowrap;
 }
 </style>
-

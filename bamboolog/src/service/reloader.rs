@@ -2,7 +2,7 @@ use sea_orm::DatabaseConnection;
 use tracing::{error, instrument};
 
 use crate::{
-    config::{config_entries, SiteSettings},
+    config::{SiteSettings, config_entries},
     service::{
         jwt::{JwtService, JwtServiceSettings, JwtServiceState},
         site_settings::SiteSettingsService,
@@ -45,9 +45,15 @@ impl ServiceReloader {
         );
 
         let mut errors = Vec::new();
-        if let Err(e) = jwt_res { errors.push(format!("JWT: {e}")); }
-        if let Err(e) = theme_res { errors.push(format!("Theme: {e}")); }
-        if let Err(e) = site_res { errors.push(format!("Site Settings: {e}")); }
+        if let Err(e) = jwt_res {
+            errors.push(format!("JWT: {e}"));
+        }
+        if let Err(e) = theme_res {
+            errors.push(format!("Theme: {e}"));
+        }
+        if let Err(e) = site_res {
+            errors.push(format!("Site Settings: {e}"));
+        }
 
         if !errors.is_empty() {
             let error_msg = errors.join("; ");
@@ -66,7 +72,9 @@ impl ServiceReloader {
             .traced(|e| error!("Failed to load JWT settings: {e}"))?
             .unwrap_or_default();
 
-        self.jwt_service.set_state(JwtServiceState::from(settings)).await;
+        self.jwt_service
+            .set_state(JwtServiceState::from(settings))
+            .await;
         Ok(())
     }
 
@@ -80,7 +88,9 @@ impl ServiceReloader {
 
         let state = self.theme_service.get_state();
         let mut state = state.write().await;
-        state.load_settings(&settings).traced(|e| error!("Failed to reload theme: {e}"))?;
+        state
+            .load_settings(&settings)
+            .traced(|e| error!("Failed to reload theme: {e}"))?;
 
         Ok(())
     }

@@ -8,17 +8,22 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::json;
 use tracing::instrument;
 
+use crate::service::storage::StorageService;
 use crate::{
     entity::post::{Column as PostColumn, Entity as PostEntity},
     service::theme::ThemeService,
     utils::HttpFailibleOperationExts,
 };
+use axum::body::Body;
+use axum::http::StatusCode;
+use tokio_util::io::ReaderStream;
 
 pub fn get_routes() -> Router {
     Router::new()
         .route("/", get(display_home))
         .route("/posts/{id_or_name}", get(display_post))
         .route("/static/theme/{*path}", get(serve_theme_static))
+        .route("/attachments/{hash}", get(serve_attachment))
 }
 
 #[instrument(skip_all)]
@@ -90,4 +95,24 @@ async fn serve_theme_static(
         .serve_static(path)
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?)
+}
+
+async fn serve_attachment(
+    Path(hash): Path<String>,
+    Extension(db): Extension<DatabaseConnection>,
+    Extension(config): Extension<std::sync::Arc<crate::config::ApplicationConfiguration>>,
+) -> Result<impl IntoResponse, Response> {
+    let path = StorageService::get_attachment_path(&db, &config, &hash)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+
+    let file = tokio::fs::File::open(path).await.map_err(|e| {
+        tracing::error!("{}", e);
+        (StatusCode::NOT_FOUND, "File not found").into_response()
+    })?;
+
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    Ok(body)
 }

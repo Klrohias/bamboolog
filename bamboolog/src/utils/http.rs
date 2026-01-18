@@ -85,7 +85,7 @@ where
                 Json(serde_json::json!({
                     "code": self.code,
                     "message": self.message,
-                    "data":self.data,
+                    "data": self.data,
                 })),
             )
                 .into_response()
@@ -93,7 +93,7 @@ where
             Json(serde_json::json!({
                 "code": self.code,
                 "message": self.message,
-                "data":self.data,
+                "data": self.data,
             }))
             .into_response()
         }

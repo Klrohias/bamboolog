@@ -29,7 +29,7 @@
 import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import api from '@/api'
+import { settingsApi } from '@/api/settings'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -47,8 +47,8 @@ const themeOptions = ref<{label: string, value: string}[]>([])
 
 async function fetchSettings() {
   try {
-    const { data } = await api.get('/settings/')
-    settings.value = data.data
+    const { data } = await settingsApi.get()
+    settings.value = data.data as any
   } catch (e) {
     message.error(t('settings.fetch_failed'))
   }
@@ -56,7 +56,7 @@ async function fetchSettings() {
 
 async function fetchThemes() {
   try {
-    const { data } = await api.get('/settings/themes')
+    const { data } = await settingsApi.getThemes()
     themeOptions.value = data.data.map((t: string) => ({ label: t, value: t }))
   } catch (e) {
     message.error(t('common.error'))
@@ -66,7 +66,7 @@ async function fetchThemes() {
 async function saveSettings(type: 'site' | 'theme') {
   try {
     const payload = type === 'site' ? { site: settings.value.site } : { theme: settings.value.theme }
-    await api.post('/settings/', payload)
+    await settingsApi.update(payload)
     message.success(t('settings.save_success'))
   } catch (e) {
     message.error(t('common.error'))

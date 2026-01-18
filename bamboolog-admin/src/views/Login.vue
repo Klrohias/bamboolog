@@ -63,18 +63,22 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { PersonOutline, LockClosedOutline, SunnyOutline, MoonOutline, LanguageOutline } from '@vicons/ionicons5'
-import api, { setAuthToken } from '@/api'
-import { useSettingsStore } from '@/stores/settings'
+import { userApi } from '@/api/user'
+import { setAuthToken } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { useSettingsStore } from '@/stores/settings'
 
-const { t, locale } = useI18n()
-const settingsStore = useSettingsStore()
-const userStore = useUserStore()
 const router = useRouter()
 const msg = useMessage()
-const loading = ref(false)
+const { t, locale } = useI18n()
+const userStore = useUserStore()
+const settingsStore = useSettingsStore()
 
-const form = reactive({ username: '', password: '' })
+const loading = ref(false)
+const form = reactive({
+  username: '',
+  password: ''
+})
 
 async function doLogin() {
   if (!form.username || !form.password) {
@@ -83,7 +87,7 @@ async function doLogin() {
   }
   loading.value = true
   try {
-    const { data } = await api.post('/user/auth', {
+    const { data } = await userApi.login({
       username: form.username,
       password: form.password,
     })
@@ -138,4 +142,3 @@ function handleToggleLocale() {
   font-weight: 600;
 }
 </style>
-

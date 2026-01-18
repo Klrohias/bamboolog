@@ -21,7 +21,9 @@
         "confirm_delete": "确定要删除吗？",
         "search": "搜索",
         "profile": "个人资料",
-        "changePassword": "修改密码"
+        "changePassword": "修改密码",
+        "attachments": "附件",
+        "storage_engine": "存储引擎"
     },
     "posts": {
         "title": "标题",
@@ -71,5 +73,33 @@
         "confirmPasswordPlaceholder": "请再次输入新密码",
         "confirmPasswordRequired": "请确认新密码",
         "passwordMismatch": "两次输入的密码不一致"
+    },
+    "attachments": {
+        "title": "附件管理",
+        "upload": "上传附件",
+        "upload_success": "上传成功",
+        "upload_failed": "上传失败",
+        "delete_success": "附件已删除",
+        "delete_failed": "删除附件失败",
+        "fetch_failed": "获取附件列表失败",
+        "copy_success": "链接已复制",
+        "select_storage": "选择存储引擎",
+        "drag_or_click": "点击或者拖动文件到此处上传",
+        "filter_mime": "文件类型",
+        "filter_storage": "存储引擎",
+        "upload_modal_title": "上传文件",
+        "created_at": "创建时间",
+        "actions": "操作",
+        "preview": "预览"
+    },
+    "storage_engine": {
+        "title": "存储引擎管理",
+        "create": "新增",
+        "actions": "操作",
+        "edit": "编辑",
+        "delete": "删除",
+        "comments": "注释",
+        "type": "类型",
+        "name": "名称"
     }
 }

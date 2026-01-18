@@ -10,6 +10,12 @@ const api = axios.create({
     },
 })
 
+export interface ApiResponse<T> {
+    code: number // or status depending on backend
+    message: string
+    data: T
+}
+
 export function setAuthToken(token: string | null) {
     if (token) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`

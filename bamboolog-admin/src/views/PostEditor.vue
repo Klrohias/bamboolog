@@ -30,7 +30,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, type FormInst } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import api from '@/api'
+import { postsApi } from '@/api/posts'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 const { t } = useI18n()
@@ -57,7 +57,7 @@ const rules = {
 async function fetchPost() {
   if (!isEdit.value) return
   try {
-    const { data } = await api.get(`/posts/${route.params.id}`)
+    const { data } = await postsApi.get(Number(route.params.id))
     const post = data.data
     form.value.title = post.title
     form.value.name = post.name
@@ -73,10 +73,10 @@ async function handleSave() {
   saving.value = true
   try {
     if (isEdit.value) {
-      await api.post(`/posts/${route.params.id}`, form.value)
+      await postsApi.update(Number(route.params.id), form.value)
       message.success(t('posts.update_success'))
     } else {
-      await api.put('/posts/', form.value)
+      await postsApi.create(form.value)
       message.success(t('posts.create_success'))
     }
     router.push('/posts')
