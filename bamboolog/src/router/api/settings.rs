@@ -1,4 +1,8 @@
-use axum::{Extension, Json, Router, response::Response, routing::get};
+use axum::{
+    Extension, Json, Router,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -7,7 +11,7 @@ use crate::{
     config::{SiteSettings, config_entries},
     service::{
         jwt::JwtClaims,
-        reloader::ServiceReloader,
+        reloadable::ServiceReloader,
         theme::{ThemeService, ThemeServiceSettings},
     },
     utils::{ApiResponse, HttpFailibleOperationExts},
@@ -17,6 +21,7 @@ pub fn get_routes() -> Router {
     Router::new()
         .route("/", get(get_settings).post(update_settings))
         .route("/themes", get(list_themes))
+        .route("/reload", post(reload))
 }
 
 async fn get_settings(
@@ -67,11 +72,7 @@ async fn update_settings(
             .traced_and_response(|e| tracing::error!("{}", e))?;
     }
 
-    reloader
-        .reload()
-        .await
-        .traced_and_response(|e| tracing::error!("{}", e))?;
-
+    reloader.reload().await;
     Ok(ApiResponse::ok(()))
 }
 
@@ -85,4 +86,12 @@ async fn list_themes(
         .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(themes))
+}
+
+async fn reload(
+    Extension(reloader): Extension<ServiceReloader>,
+    _claims: JwtClaims,
+) -> Result<Response, Response> {
+    reloader.reload().await;
+    Ok(ApiResponse::ok(()).into_response())
 }

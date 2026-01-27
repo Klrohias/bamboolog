@@ -1,12 +1,12 @@
 use bamboolog::{
     self,
-    config::{ApplicationConfiguration, SiteSettings, config_entries},
+    config::ApplicationConfiguration,
     router::get_routes,
     service::{
-        jwt::{JwtService, JwtServiceSettings, JwtServiceState},
-        reloader::ServiceReloader,
+        jwt::JwtService,
+        reloadable::{ReloadableService, ServiceReloader},
         site_settings::SiteSettingsService,
-        theme::{ThemeService, ThemeServiceSettings, ThemeServiceState},
+        theme::ThemeService,
     },
 };
 
@@ -34,103 +34,29 @@ async fn configure_database(config: &ApplicationConfiguration) -> DatabaseConnec
 
 #[instrument(skip_all)]
 async fn configure_jwt_service(database: &DatabaseConnection) -> JwtService {
-    let settings = match config_entries::JWT_SETTINGS
-        .get::<JwtServiceSettings>(database)
-        .await
-    {
-        Err(e) => {
-            tracing::warn!(
-                "Failed to load settings for jwt service. For security, we will generate a random temporary settings, you should shutdown the application and check it: {}",
-                e
-            );
-
-            Some(JwtServiceSettings::default())
-        }
-        Ok(v) => v,
-    };
-
-    let settings = match settings {
-        None => {
-            tracing::warn!(
-                "No settings present for jwt service. For security, we will generate a new settings."
-            );
-
-            let new_settings = JwtServiceSettings::default();
-
-            if let Err(e) = config_entries::JWT_SETTINGS
-                .set(database, Some(&new_settings))
-                .await
-            {
-                tracing::warn!("Failed to save a new jwt settings: {}", e);
-            }
-
-            new_settings
-        }
-        Some(v) => v,
-    };
-
-    JwtService::new(JwtServiceState::from(settings))
+    let result = JwtService::new(database.to_owned());
+    result.reload().await;
+    result
 }
 
-#[instrument(skip_all)]
 async fn configure_theme_service(
     database: &DatabaseConnection,
     application_configuration: &Arc<ApplicationConfiguration>,
     site_settings_service: &SiteSettingsService,
 ) -> ThemeService {
-    let settings = match config_entries::THEME_SERVICE_SETTINGS
-        .get::<ThemeServiceSettings>(&database)
-        .await
-    {
-        Err(e) => {
-            tracing::warn!(
-                "Failed to load settings for theme service, and it will use a default settings. Error: {}",
-                e
-            );
-
-            ThemeServiceSettings::default()
-        }
-        Ok(None) => {
-            tracing::warn!(
-                "No settings present for theme service, and it wil use a default settings."
-            );
-            ThemeServiceSettings::default()
-        }
-        Ok(Some(v)) => v,
-    };
-
-    let mut state = ThemeServiceState::new(
-        application_configuration.clone(),
-        site_settings_service.clone(),
+    let result = ThemeService::new(
+        database.to_owned(),
+        application_configuration.to_owned(),
+        site_settings_service.to_owned(),
     );
-    if let Err(e) = state.load_settings(&settings) {
-        tracing::warn!("Failed to load theme: {}", e);
-    }
-
-    ThemeService::new(state)
+    result.reload().await;
+    result
 }
 
 async fn configure_site_settings_service(database: &DatabaseConnection) -> SiteSettingsService {
-    let settings = match config_entries::SITE_SETTINGS
-        .get::<SiteSettings>(&database)
-        .await
-    {
-        Err(e) => {
-            tracing::warn!(
-                "Failed to load site settings, and it will use a default settings. Error: {}",
-                e
-            );
-
-            SiteSettings::default()
-        }
-        Ok(None) => {
-            tracing::warn!("No site settings, and it will use a default settings.");
-            SiteSettings::default()
-        }
-        Ok(Some(v)) => v,
-    };
-
-    SiteSettingsService::new(settings)
+    let result = SiteSettingsService::new(database.to_owned());
+    result.reload().await;
+    result
 }
 
 async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
@@ -139,12 +65,11 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
     let jwt_service = configure_jwt_service(&database).await;
     let site_settings_service = configure_site_settings_service(&database).await;
     let theme_service = configure_theme_service(&database, &config, &site_settings_service).await;
-    let service_reloader = ServiceReloader::new(
-        database.clone(),
-        jwt_service.clone(),
-        theme_service.clone(),
-        site_settings_service.clone(),
-    );
+    let service_reloader = ServiceReloader::new(vec![
+        Box::new(jwt_service.clone()),
+        Box::new(site_settings_service.clone()),
+        Box::new(theme_service.clone()),
+    ]);
 
     // Create routes
     get_routes(&config).layer(
