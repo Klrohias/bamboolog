@@ -91,6 +91,7 @@
         "created_at": "创建时间",
         "actions": "操作",
         "preview": "预览"
+        ,"filename": "文件名"
     },
     "storage_engine": {
         "title": "存储引擎管理",
@@ -99,7 +100,29 @@
         "edit": "编辑",
         "delete": "删除",
         "comments": "注释",
-        "type": "类型",
-        "name": "名称"
+        "name": "名称",
+        "kind": "类型",
+        "kind_local": "本地存储",
+        "kind_s3": "S3 兼容对象存储",
+        "local_root": "本地根目录",
+        "local_root_hint": "留空时使用全局 asset_dir",
+        "s3_bucket": "Bucket",
+        "s3_region": "Region",
+        "s3_endpoint": "Endpoint URL",
+        "s3_access_key": "Access Key ID",
+        "s3_secret_key": "Secret Access Key",
+        "s3_prefix": "对象前缀",
+        "s3_path_style": "使用 path-style URL",
+        "enabled": "启用",
+        "default": "默认引擎",
+        "fetch_failed": "加载存储引擎失败",
+        "name_required": "请填写存储引擎名称",
+        "invalid_config": "存储配置格式无效",
+        "create_success": "存储引擎已创建",
+        "update_success": "存储引擎已更新",
+        "operation_failed": "存储引擎操作失败",
+        "delete_confirm": "确定删除存储引擎 {name} 吗？",
+        "delete_success": "存储引擎已删除",
+        "delete_failed": "删除存储引擎失败"
     }
 }

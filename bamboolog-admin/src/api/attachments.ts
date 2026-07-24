@@ -2,10 +2,12 @@ import api, { type ApiResponse } from './index'
 
 export interface Attachment {
     id: number
-    mime: string
     hash: string
     storage_engine_id: number
-    path: string
+    object_key: string
+    filename: string
+    mime: string
+    byte_size: number
     created_at: string
 }
 

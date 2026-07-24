@@ -1,6 +1,5 @@
 use axum::{
     Extension, Router,
-    extract::multipart::MultipartError,
     extract::{Multipart, Path, Query},
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -11,6 +10,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::instrument;
 
 use crate::{
     config::ApplicationConfiguration,
@@ -45,30 +45,38 @@ pub struct AttachmentList {
     pub total_pages: u64,
 }
 
+#[instrument(skip_all)]
 async fn upload_attachment(
     Extension(db): Extension<DatabaseConnection>,
     Extension(config): Extension<Arc<ApplicationConfiguration>>,
     _user: JwtClaims,
     mut multipart: Multipart,
 ) -> Result<Response, Response> {
-    let mut file_data: Option<Vec<u8>> = None;
-    let mut content_type: String = "application/octet-stream".to_string();
+    let mut file = Vec::new();
+    let mut has_file = false;
+    let mut filename = None;
+    let mut content_type = "application/octet-stream".to_string();
     let mut storage_engine_id: Option<i32> = None;
 
-    while let Some(field) = multipart.next_field().await.map_err(|e: MultipartError| {
+    while let Some(mut field) = multipart.next_field().await.map_err(|e| {
         ApiResponse::code_and_message(StatusCode::BAD_REQUEST, e.to_string()).into_response()
     })? {
-        let name: String = field.name().unwrap_or("").to_string();
+        let name = field.name().unwrap_or_default().to_string();
+
         if name == "file" {
+            has_file = true;
             content_type = field
                 .content_type()
                 .unwrap_or("application/octet-stream")
                 .to_string();
-            let data = field.bytes().await.map_err(|e: MultipartError| {
-                ApiResponse::code_and_message(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            filename = field.file_name().map(ToOwned::to_owned);
+
+            while let Some(chunk) = field.chunk().await.map_err(|e| {
+                ApiResponse::code_and_message(StatusCode::BAD_REQUEST, e.to_string())
                     .into_response()
-            })?;
-            file_data = Some(data.to_vec());
+            })? {
+                file.extend_from_slice(&chunk);
+            }
         } else if name == "storage_engine_id" {
             if let Ok(text) = field.text().await {
                 storage_engine_id = text.parse::<i32>().ok();
@@ -76,19 +84,26 @@ async fn upload_attachment(
         }
     }
 
-    if let Some(data) = file_data {
-        let attachment =
-            StorageService::upload(&db, &config, &data, content_type, storage_engine_id)
-                .await
-                .traced_and_response(|e| tracing::error!("{}", e))?;
-
-        return Ok(ApiResponse::ok(attachment).into_response());
+    if !has_file {
+        return Err(ApiResponse::code_and_message(
+            StatusCode::BAD_REQUEST,
+            "No file field 'file' found",
+        )
+        .into_response());
     }
 
-    Err(
-        ApiResponse::code_and_message(StatusCode::BAD_REQUEST, "No file field 'file' found")
-            .into_response(),
+    let attachment = StorageService::upload(
+        &db,
+        config.clone(),
+        &file,
+        content_type,
+        filename,
+        storage_engine_id,
     )
+    .await
+    .traced_and_response(|e| tracing::error!("{}", e))?;
+
+    Ok(ApiResponse::ok(attachment).into_response())
 }
 
 async fn list_attachments(
@@ -157,7 +172,7 @@ async fn delete_attachment(
     Extension(config): Extension<Arc<ApplicationConfiguration>>,
     _user: JwtClaims,
 ) -> Result<Response, Response> {
-    StorageService::delete(&db, &config, id)
+    StorageService::delete(&db, config.clone(), id)
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
     Ok(ApiResponse::ok(()).into_response())

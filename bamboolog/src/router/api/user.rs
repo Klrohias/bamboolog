@@ -91,8 +91,6 @@ async fn login_user(
     }
 }
 
-// ... (previous imports)
-
 #[instrument(skip(db))]
 async fn get_me(
     Extension(db): Extension<DatabaseConnection>,

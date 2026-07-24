@@ -108,23 +108,15 @@ pub async fn list_posts(
 
     let paginator = select.into_partial_model().paginate(&database, page_size);
 
-    let total = paginator.num_items().await.map_err(|e| {
-        tracing::error!("{}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ApiResponse::internal_server_error(),
-        )
-            .into_response()
-    })?;
+    let total = paginator
+        .num_items()
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
-    let posts = paginator.fetch_page(page - 1).await.map_err(|e| {
-        tracing::error!("{}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ApiResponse::internal_server_error(),
-        )
-            .into_response()
-    })?;
+    let posts = paginator
+        .fetch_page(page - 1)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(PostListResponse { posts, total }))
 }

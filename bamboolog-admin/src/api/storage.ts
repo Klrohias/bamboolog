@@ -4,8 +4,10 @@ export interface StorageEngine {
     id: number
     name: string
     comments: string
-    type: 'internal' | 's3'
-    config?: string // JSON string
+    kind: 'local' | 's3'
+    config_json?: string
+    is_default: boolean
+    enabled: boolean
 }
 
 export const storageApi = {

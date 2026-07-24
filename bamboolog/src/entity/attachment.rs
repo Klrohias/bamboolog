@@ -6,11 +6,13 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub mime: String,
     #[sea_orm(unique, indexed)]
     pub hash: String,
     pub storage_engine_id: i32,
-    pub path: String,
+    pub object_key: String,
+    pub filename: String,
+    pub mime: String,
+    pub byte_size: i64,
 
     #[sea_orm(default_expr = "Expr::current_timestamp()")]
     pub created_at: DateTimeUtc,

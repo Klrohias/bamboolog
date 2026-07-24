@@ -87,13 +87,13 @@ impl<'a> ThemeLoader<'a> {
         }
     }
 
-    fn get_theme_root(&self) -> Result<PathBuf, ThemeLoadError> {
+    fn get_theme_root(&self) -> Result<PathBuf, ThemeError> {
         let theme_root = self
             .application_configuration
             .asset_dir
             .join(format!("themes/{}", self.theme_service_settings.current));
         if !fs::exists(&theme_root)? {
-            return Err(ThemeLoadError::ThemeNotFound(
+            return Err(ThemeError::NoTheme(
                 self.theme_service_settings.current.to_owned(),
             ));
         }
@@ -114,11 +114,11 @@ impl<'a> ThemeLoader<'a> {
         });
     }
 
-    pub fn get_manifest(&self) -> Result<ThemeManifest, ThemeLoadError> {
+    pub fn get_manifest(&self) -> Result<ThemeManifest, ThemeError> {
         // Check definition
         let manifest_file = self.get_theme_root()?.join("manifest.toml");
         if !fs::exists(&manifest_file)? {
-            return Err(ThemeLoadError::BrokenTheme(
+            return Err(ThemeError::BrokenTheme(
                 self.theme_service_settings.current.to_owned(),
             ));
         }
@@ -127,7 +127,7 @@ impl<'a> ThemeLoader<'a> {
         return Ok(manifest);
     }
 
-    pub fn get_renderer_env(&self) -> Result<Environment<'static>, ThemeLoadError> {
+    pub fn get_renderer_env(&self) -> Result<Environment<'static>, ThemeError> {
         let theme_root = self.get_theme_root()?;
         let layouts_root = theme_root.join("layouts");
         let mut result = Self::create_renderer();
@@ -140,21 +140,6 @@ impl<'a> ThemeLoader<'a> {
 
         Ok(result)
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ThemeLoadError {
-    #[error("Theme `{0}` not found")]
-    ThemeNotFound(String),
-
-    #[error("Theme `{0}` is broken")]
-    BrokenTheme(String),
-
-    #[error(transparent)]
-    IoError(#[from] io::Error),
-
-    #[error(transparent)]
-    TomlError(#[from] toml::de::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -202,12 +187,12 @@ impl ThemeService {
         &self,
         name: impl AsRef<str>,
         ctx: impl Serialize,
-    ) -> Result<String, ThemeRenderError> {
+    ) -> Result<String, ThemeError> {
         let state = self.state.read().await;
         let loaded_theme = state
             .current_theme
             .as_ref()
-            .ok_or_else(|| ThemeRenderError::NoTheme(state.current_settings.current.clone()))?;
+            .ok_or_else(|| ThemeError::NoTheme(state.current_settings.current.clone()))?;
 
         let mapped_file = loaded_theme.manifest.map_layout_file(name.as_ref());
         let template = loaded_theme.renderer_env.get_template(&mapped_file)?;
@@ -216,13 +201,11 @@ impl ThemeService {
     }
 
     #[instrument]
-    pub async fn serve_static(&self, path: String) -> Result<Response, StaticServingError> {
+    pub async fn serve_static(&self, path: String) -> Result<Response, ThemeError> {
         // Check if the theme is loaded
         let state = self.state.read().await;
         if state.current_theme.is_none() {
-            return Err(StaticServingError::NoTheme(
-                state.current_settings.current.clone(),
-            ));
+            return Err(ThemeError::NoTheme(state.current_settings.current.clone()));
         }
 
         // Serve static file
@@ -236,7 +219,7 @@ impl ThemeService {
         let file = File::open(static_root.join(path))
             .await
             .traced(|e| tracing::error!("{}", e))
-            .map_err(|_| StaticServingError::NotFound)?;
+            .map_err(|_| ThemeError::NotFound)?;
 
         let stream = ReaderStream::new(file);
         Ok((
@@ -300,7 +283,7 @@ impl ReloadableService for ThemeService {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum StaticServingError {
+pub enum ThemeError {
     #[error("Theme `{0}` not found")]
     NoTheme(String),
 
@@ -309,13 +292,13 @@ pub enum StaticServingError {
 
     #[error(transparent)]
     IoError(#[from] io::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ThemeRenderError {
-    #[error("Theme `{0}` not found")]
-    NoTheme(String),
 
     #[error(transparent)]
     JinjaError(#[from] minijinja::Error),
+
+    #[error("Theme `{0}` is broken")]
+    BrokenTheme(String),
+
+    #[error(transparent)]
+    TomlError(#[from] toml::de::Error),
 }

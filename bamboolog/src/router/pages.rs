@@ -14,9 +14,6 @@ use crate::{
     service::theme::ThemeService,
     utils::HttpFailibleOperationExts,
 };
-use axum::body::Body;
-use axum::http::StatusCode;
-use tokio_util::io::ReaderStream;
 
 pub fn get_routes() -> Router {
     Router::new()
@@ -101,18 +98,8 @@ async fn serve_attachment(
     Path(hash): Path<String>,
     Extension(db): Extension<DatabaseConnection>,
     Extension(config): Extension<std::sync::Arc<crate::config::ApplicationConfiguration>>,
-) -> Result<impl IntoResponse, Response> {
-    let path = StorageService::get_attachment_path(&db, &config, &hash)
+) -> Result<Response, Response> {
+    StorageService::serve(&db, config.clone(), &hash)
         .await
-        .traced_and_response(|e| tracing::error!("{}", e))?;
-
-    let file = tokio::fs::File::open(path).await.map_err(|e| {
-        tracing::error!("{}", e);
-        (StatusCode::NOT_FOUND, "File not found").into_response()
-    })?;
-
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
-
-    Ok(body)
+        .traced_and_response(|e| tracing::error!("{}", e))
 }

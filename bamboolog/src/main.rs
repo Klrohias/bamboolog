@@ -1,23 +1,26 @@
-use bamboolog::{
-    self,
-    config::ApplicationConfiguration,
-    router::get_routes,
-    service::{
-        jwt::JwtService,
-        reloadable::{ReloadableService, ServiceReloader},
-        site_settings::SiteSettingsService,
-        theme::ThemeService,
-    },
-};
-
-use axum::{Extension, Router};
+use bamboolog::{config::ApplicationConfiguration, maintenance, web};
+use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
-use sea_orm::{Database, DatabaseConnection};
-use std::{env::args, net::SocketAddr, sync::Arc};
-use tokio::net::TcpListener;
-use tower::ServiceBuilder;
-use tracing::instrument;
+use std::sync::Arc;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "bamboolog",
+    about = "Run the Bamboolog server or maintenance commands"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Synchronize database entities and seed the default storage engine.
+    SyncEntitiesEf,
+    /// Interactively create an administrator account.
+    CreateAdmin,
+}
 
 fn configure_tracing() {
     tracing_subscriber::registry()
@@ -26,60 +29,18 @@ fn configure_tracing() {
         .init();
 }
 
-async fn configure_database(config: &ApplicationConfiguration) -> DatabaseConnection {
-    Database::connect(&config.database)
+async fn run_maintenance(command: Command, config: &ApplicationConfiguration) {
+    let database = config
+        .connect_database()
         .await
-        .expect("Failed to connect to database")
-}
+        .expect("Failed to connect to database");
 
-#[instrument(skip_all)]
-async fn configure_jwt_service(database: &DatabaseConnection) -> JwtService {
-    let result = JwtService::new(database.to_owned());
-    result.reload().await;
-    result
-}
-
-async fn configure_theme_service(
-    database: &DatabaseConnection,
-    application_configuration: &Arc<ApplicationConfiguration>,
-    site_settings_service: &SiteSettingsService,
-) -> ThemeService {
-    let result = ThemeService::new(
-        database.to_owned(),
-        application_configuration.to_owned(),
-        site_settings_service.to_owned(),
-    );
-    result.reload().await;
-    result
-}
-
-async fn configure_site_settings_service(database: &DatabaseConnection) -> SiteSettingsService {
-    let result = SiteSettingsService::new(database.to_owned());
-    result.reload().await;
-    result
-}
-
-async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
-    // Configure services
-    let database = configure_database(&config).await;
-    let jwt_service = configure_jwt_service(&database).await;
-    let site_settings_service = configure_site_settings_service(&database).await;
-    let theme_service = configure_theme_service(&database, &config, &site_settings_service).await;
-    let service_reloader = ServiceReloader::new(vec![
-        Box::new(jwt_service.clone()),
-        Box::new(site_settings_service.clone()),
-        Box::new(theme_service.clone()),
-    ]);
-
-    // Create routes
-    get_routes(&config).layer(
-        ServiceBuilder::new()
-            .layer(Extension(config.clone()))
-            .layer(Extension(database))
-            .layer(Extension(jwt_service))
-            .layer(Extension(theme_service))
-            .layer(Extension(service_reloader)),
-    )
+    match command {
+        Command::SyncEntitiesEf => maintenance::sync_entities(&database)
+            .await
+            .expect("Failed to sync entities"),
+        Command::CreateAdmin => maintenance::create_admin(&database).await,
+    }
 }
 
 #[tokio::main]
@@ -87,22 +48,38 @@ async fn main() {
     dotenv().ok();
     configure_tracing();
 
+    let cli = Cli::parse();
     let config = Arc::new(ApplicationConfiguration::load().expect("Failed to load configuration"));
 
-    if bamboolog::maintenance::action_dispatch(args(), &config).await {
-        return;
+    match cli.command {
+        Some(command) => run_maintenance(command, &config).await,
+        None => web::run(config).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Command};
+    use clap::Parser;
+
+    #[test]
+    fn parses_server_mode_without_a_subcommand() {
+        let cli = Cli::try_parse_from(["bamboolog"]).unwrap();
+
+        assert!(cli.command.is_none());
     }
 
-    let app = build_app(config.clone()).await;
+    #[test]
+    fn parses_each_maintenance_subcommand() {
+        let sync = Cli::try_parse_from(["bamboolog", "sync-entities-ef"]).unwrap();
+        let create_admin = Cli::try_parse_from(["bamboolog", "create-admin"]).unwrap();
 
-    let addr: SocketAddr = config
-        .listen_addr
-        .as_str()
-        .parse()
-        .expect("Invalid listen_addr");
+        assert!(matches!(sync.command, Some(Command::SyncEntitiesEf)));
+        assert!(matches!(create_admin.command, Some(Command::CreateAdmin)));
+    }
 
-    tracing::info!("Listening on {}", addr);
-
-    let listener = TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    #[test]
+    fn rejects_unknown_arguments() {
+        assert!(Cli::try_parse_from(["bamboolog", "unknown-command"]).is_err());
+    }
 }

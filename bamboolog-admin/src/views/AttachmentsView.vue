@@ -108,7 +108,11 @@ const pagination = ref({
   pageCount: 1
 })
 
-const engineOptions = computed(() => engines.value.map(e => ({ label: e.name, value: e.id })))
+const engineOptions = computed(() =>
+  engines.value
+    .filter(engine => engine.enabled)
+    .map(engine => ({ label: engine.name, value: engine.id }))
+)
 
 const columns: DataTableColumns<Attachment> = [
   {
@@ -136,6 +140,11 @@ const columns: DataTableColumns<Attachment> = [
     key: 'mime',
     filter: true,
     filterOptionValue: filters.mime,
+  },
+  {
+    title: t('attachments.filename'),
+    key: 'filename',
+    ellipsis: { tooltip: true }
   },
   {
     title: 'Hash',
@@ -188,8 +197,8 @@ async function fetchEngines() {
     const { data } = await storageApi.list()
     engines.value = data.data
     if (engines.value.length > 0) {
-      const internal = engines.value.find(e => e.type === 'internal')
-      uploadEngineId.value = internal ? internal.id : (engines.value[0]?.id ?? null)
+      const defaultEngine = engines.value.find(engine => engine.enabled && engine.is_default)
+      uploadEngineId.value = defaultEngine?.id ?? engineOptions.value[0]?.value ?? null
     }
   } catch (e) {
     message.warning('Failed to fetch storage engines')

@@ -91,6 +91,7 @@
         "created_at": "Created At",
         "actions": "Actions",
         "preview": "Preview"
+        ,"filename": "Filename"
     },
     "storage_engine": {
         "title": "Storage Engines",
@@ -99,7 +100,29 @@
         "edit": "Edit",
         "delete": "Delete",
         "comments": "Comments",
-        "type": "Type",
-        "name": "Name"
+        "name": "Name",
+        "kind": "Kind",
+        "kind_local": "Local storage",
+        "kind_s3": "S3-compatible storage",
+        "local_root": "Local root directory",
+        "local_root_hint": "Uses global asset_dir when empty",
+        "s3_bucket": "Bucket",
+        "s3_region": "Region",
+        "s3_endpoint": "Endpoint URL",
+        "s3_access_key": "Access Key ID",
+        "s3_secret_key": "Secret Access Key",
+        "s3_prefix": "Object prefix",
+        "s3_path_style": "Use path-style URL",
+        "enabled": "Enabled",
+        "default": "Default engine",
+        "fetch_failed": "Failed to load storage engines",
+        "name_required": "Storage engine name is required",
+        "invalid_config": "Storage configuration is invalid",
+        "create_success": "Storage engine created",
+        "update_success": "Storage engine updated",
+        "operation_failed": "Storage engine operation failed",
+        "delete_confirm": "Delete storage engine {name}?",
+        "delete_success": "Storage engine deleted",
+        "delete_failed": "Failed to delete storage engine"
     }
 }

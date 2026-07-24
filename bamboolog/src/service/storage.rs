@@ -1,105 +1,107 @@
-use crate::config::ApplicationConfiguration;
-use crate::entity::{attachment, storage_engine};
+use std::sync::Arc;
+
 use anyhow::Context;
+use axum::{
+    body::Body,
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
+};
 use sea_orm::*;
-use std::path::{Path, PathBuf};
-use tokio::fs;
+
+use crate::{
+    config::ApplicationConfiguration,
+    entity::{attachment, storage_engine},
+    storage::create_storage_provider,
+};
 
 pub struct StorageService;
 
 impl StorageService {
     pub async fn upload(
         db: &DatabaseConnection,
-        config: &ApplicationConfiguration,
+        config: Arc<ApplicationConfiguration>,
         data: &[u8],
         mime_type: String,
+        filename: Option<String>,
         engine_id: Option<i32>,
     ) -> Result<attachment::Model, anyhow::Error> {
-        let digest = md5::compute(data);
-        let hash = format!("{:x}", digest);
+        let hash = format!("{:x}", md5::compute(data));
 
-        // Check if hash exists
-        if let Some(_) = attachment::Entity::find()
+        if attachment::Entity::find()
             .filter(attachment::Column::Hash.eq(&hash))
             .one(db)
             .await?
+            .is_some()
         {
-            return Err(anyhow::anyhow!("File with hash {} already exists", hash));
+            return Err(anyhow::anyhow!("File with hash {hash} already exists"));
         }
 
-        // Find storage engine
-        let engine = if let Some(id) = engine_id {
-            storage_engine::Entity::find_by_id(id)
-                .one(db)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("Storage engine not found"))?
-        } else {
-            storage_engine::Entity::find()
-                .filter(storage_engine::Column::Type.eq("internal"))
-                .one(db)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("No internal storage engine found"))?
-        };
-
-        // Determine extension
+        let engine = Self::resolve_engine(db, engine_id).await?;
         let ext = mime_guess::get_mime_extensions_str(&mime_type)
             .and_then(|exts| exts.first())
             .unwrap_or(&"bin");
-        let filename = format!("{}.{}", hash, ext);
+        let key = format!("attachments/{}/{}.{}", engine.id, hash, ext);
 
-        // Construct Path: asset_dir/attachments/{engine_id}/
-        let relative_dir = Path::new("attachments").join(engine.id.to_string());
-        let abs_dir = config.asset_dir.join(&relative_dir);
-
-        if !abs_dir.exists() {
-            fs::create_dir_all(&abs_dir)
-                .await
-                .context("Failed to create storage directory")?;
-        }
-
-        let abs_path = abs_dir.join(&filename);
-        fs::write(&abs_path, data)
+        let provider = create_storage_provider(config, &engine).await?;
+        provider
+            .put(&key, data, &mime_type)
             .await
-            .context("Failed to write file")?;
-
-        // Store path relative to asset_dir
-        let stored_path = relative_dir.join(&filename).to_string_lossy().to_string();
+            .with_context(|| format!("Failed to store attachment with key {key}"))?;
 
         let attach_model = attachment::ActiveModel {
-            mime: Set(mime_type),
             hash: Set(hash),
             storage_engine_id: Set(engine.id),
-            path: Set(stored_path),
+            object_key: Set(key.clone()),
+            filename: Set(filename.unwrap_or_default()),
+            mime: Set(mime_type),
+            byte_size: Set(i64::try_from(data.len()).unwrap_or(i64::MAX)),
             ..Default::default()
         };
 
-        attach_model
-            .insert(db)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))
+        match attach_model.insert(db).await {
+            Ok(attachment) => Ok(attachment),
+            Err(error) => {
+                if let Err(cleanup_error) = provider.delete(&key).await {
+                    tracing::error!(
+                        "Failed to clean up attachment object after database insert failed: {cleanup_error}"
+                    );
+                }
+                Err(anyhow::anyhow!(error))
+            }
+        }
     }
 
-    pub async fn get_attachment_path(
+    pub async fn serve(
         db: &DatabaseConnection,
-        config: &ApplicationConfiguration,
+        config: Arc<ApplicationConfiguration>,
         hash: &str,
-    ) -> Result<PathBuf, anyhow::Error> {
+    ) -> Result<Response, anyhow::Error> {
         let attach = attachment::Entity::find()
             .filter(attachment::Column::Hash.eq(hash))
             .one(db)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Attachment not found"))?;
 
-        let path = config.asset_dir.join(attach.path);
-        if !path.exists() {
-            return Err(anyhow::anyhow!("File not found on disk"));
-        }
-        Ok(path)
+        let engine = storage_engine::Entity::find_by_id(attach.storage_engine_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Storage engine not found"))?;
+
+        let provider = create_storage_provider(config, &engine).await?;
+        let object = provider.get(&attach.object_key).await?;
+        let content_type = object.mime.unwrap_or(attach.mime);
+
+        Ok((
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, content_type)],
+            Body::from(object.bytes),
+        )
+            .into_response())
     }
 
     pub async fn delete(
         db: &DatabaseConnection,
-        config: &ApplicationConfiguration,
+        config: Arc<ApplicationConfiguration>,
         id: i32,
     ) -> Result<(), anyhow::Error> {
         let attach = attachment::Entity::find_by_id(id)
@@ -107,15 +109,39 @@ impl StorageService {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Attachment not found"))?;
 
-        let path = config.asset_dir.join(&attach.path);
+        let engine = storage_engine::Entity::find_by_id(attach.storage_engine_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Storage engine not found"))?;
+        let provider = create_storage_provider(config, &engine).await?;
 
+        provider.delete(&attach.object_key).await?;
         attachment::Entity::delete_by_id(id).exec(db).await?;
 
-        if path.exists() {
-            fs::remove_file(path)
-                .await
-                .context("Failed to delete file")?;
-        }
         Ok(())
+    }
+
+    async fn resolve_engine(
+        db: &DatabaseConnection,
+        engine_id: Option<i32>,
+    ) -> Result<storage_engine::Model, anyhow::Error> {
+        if let Some(id) = engine_id {
+            let engine = storage_engine::Entity::find_by_id(id)
+                .one(db)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Storage engine not found"))?;
+            if !engine.enabled {
+                return Err(anyhow::anyhow!("Storage engine is disabled"));
+            }
+            return Ok(engine);
+        }
+
+        storage_engine::Entity::find()
+            .filter(storage_engine::Column::Enabled.eq(true))
+            .order_by_desc(storage_engine::Column::IsDefault)
+            .order_by_asc(storage_engine::Column::Id)
+            .one(db)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("No enabled storage engine found"))
     }
 }

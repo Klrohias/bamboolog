@@ -32,3 +32,9 @@ GEMINI.md
 
 # macOS
 .DS_Store
+
+# AI tools
+.codegraph/
+.mcp.json
+.claude/
+.codex/

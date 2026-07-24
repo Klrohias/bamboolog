@@ -9,8 +9,10 @@ pub struct Model {
     #[sea_orm(unique)]
     pub name: String,
     pub comments: String,
-    pub r#type: String, // internal or s3
-    pub config: Option<String>,
+    pub kind: String,
+    pub config_json: Option<String>,
+    pub is_default: bool,
+    pub enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
