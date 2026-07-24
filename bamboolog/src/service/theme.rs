@@ -9,7 +9,6 @@ use minijinja::{Environment, Value};
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
-use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
 use tracing::instrument;
@@ -47,7 +46,7 @@ pub struct ThemeServiceState {
 struct ThemeLoader<'a> {
     application_configuration: &'a Arc<ApplicationConfiguration>,
     theme_service_settings: &'a ThemeServiceSettings,
-    site_settings_services: &'a SiteSettingsService,
+    base_url: String,
 }
 
 impl<'a> ThemeLoader<'a> {
@@ -78,12 +77,12 @@ impl<'a> ThemeLoader<'a> {
     pub fn new(
         application_configuration: &'a Arc<ApplicationConfiguration>,
         theme_service_settings: &'a ThemeServiceSettings,
-        site_settings_services: &'a SiteSettingsService,
+        base_url: String,
     ) -> Self {
         Self {
             application_configuration,
             theme_service_settings,
-            site_settings_services,
+            base_url,
         }
     }
 
@@ -102,15 +101,10 @@ impl<'a> ThemeLoader<'a> {
     }
 
     fn setup_renderer_features(&self, renderer_env: &mut Environment<'static>) {
-        let site_settings_service = self.site_settings_services.to_owned();
+        let base_url = self.base_url.clone();
 
         renderer_env.add_filter("fromThemeStatic", move |value: String| -> Value {
-            tokio::task::block_in_place(|| {
-                Handle::current().block_on(async {
-                    let base_url = &site_settings_service.read().await.base_url;
-                    return Value::from_safe_string(format!("{}/static/theme/{}", base_url, value));
-                })
-            })
+            Value::from_safe_string(format!("{}/static/theme/{}", base_url, value))
         });
     }
 
@@ -254,7 +248,8 @@ impl ReloadableService for ThemeService {
             Ok(Some(v)) => v,
         };
 
-        let loader = ThemeLoader::new(&self.dep_app_cfg, &settings, &self.dep_site_settings);
+        let base_url = self.dep_site_settings.read().await.base_url.clone();
+        let loader = ThemeLoader::new(&self.dep_app_cfg, &settings, base_url);
         let manifest = match loader.get_manifest() {
             Err(e) => {
                 tracing::error!("Failed to load theme manifest: {e}");
