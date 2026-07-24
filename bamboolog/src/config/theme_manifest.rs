@@ -216,8 +216,8 @@ mod tests {
                 options = [{ label = "Journal", value = "journal" }, { label = "Notes", value = "notes" }]
 
                 [[config]]
-                key = "posts_per_page"
-                label = "Posts per page"
+                key = "sidebar_width"
+                label = "Sidebar width"
                 type = "integer"
                 default = 10
                 min = 1
@@ -233,7 +233,7 @@ mod tests {
         let config = manifest
             .resolve_config(
                 &serde_json::from_value(
-                    json!({ "subtitle": "Personal notes", "posts_per_page": 20 }),
+                    json!({ "subtitle": "Personal notes", "sidebar_width": 20 }),
                 )
                 .unwrap(),
                 true,
@@ -242,14 +242,14 @@ mod tests {
 
         assert_eq!(config["subtitle"], "Personal notes");
         assert_eq!(config["layout"], "journal");
-        assert_eq!(config["posts_per_page"], 20);
+        assert_eq!(config["sidebar_width"], 20);
     }
 
     #[test]
     fn rejects_unknown_or_invalid_values() {
         let manifest = manifest();
         let unknown = serde_json::from_value(json!({ "other": true })).unwrap();
-        let invalid = serde_json::from_value(json!({ "posts_per_page": 0 })).unwrap();
+        let invalid = serde_json::from_value(json!({ "sidebar_width": 0 })).unwrap();
 
         assert!(manifest.resolve_config(&unknown, true).is_err());
         assert!(manifest.resolve_config(&invalid, true).is_err());

@@ -722,7 +722,7 @@ mod tests {
         let values = serde_json::from_value(json!({
             "subtitle": "Personal notes",
             "show_reading_time": false,
-            "posts_per_page": 12
+            "sidebar_width": 12
         }))
         .unwrap();
 

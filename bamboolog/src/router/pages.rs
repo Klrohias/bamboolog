@@ -23,8 +23,6 @@ use crate::{
     utils::{HttpFailibleOperationExts, Pagination, render_markdown},
 };
 
-const PUBLIC_PAGE_SIZE: u64 = 10;
-
 #[derive(Debug, Deserialize)]
 struct HomeQuery {
     page: Option<u64>,
@@ -85,17 +83,16 @@ async fn display_archives(
     Extension(theme_service): Extension<ThemeService>,
     Extension(site_settings): Extension<SiteSettingsService>,
 ) -> Result<Html<String>, Response> {
-    let pagination = Pagination::new(query.page, Some(PUBLIC_PAGE_SIZE), PUBLIC_PAGE_SIZE);
-    let posts = visible_posts(&database).await?;
-    let total = posts.len() as u64;
+    let site = site_settings.read().await.clone();
+    let pagination = public_pagination(query.page, &site);
+    let (total, posts) = paginated_visible_posts(&database, pagination).await?;
     let mut years = BTreeMap::<String, Vec<Value>>::new();
-    for post in page_posts(posts, pagination) {
+    for post in posts {
         years
             .entry(post.created_at.format("%Y").to_string())
             .or_default()
             .push(post_summary(&post));
     }
-    let site = site_settings.read().await.clone();
 
     Ok(Html(
         theme_service
@@ -211,7 +208,7 @@ async fn display_taxonomy(
                     .any(|term| term == &selected)
             })
             .collect::<Vec<_>>();
-        let pagination = Pagination::new(query.page, Some(PUBLIC_PAGE_SIZE), PUBLIC_PAGE_SIZE);
+        let pagination = public_pagination(query.page, &site);
         let total = posts.len() as u64;
         let posts = page_posts(posts, pagination)
             .iter()
@@ -262,24 +259,9 @@ async fn display_home(
     Extension(theme_service): Extension<ThemeService>,
     Extension(site_settings): Extension<SiteSettingsService>,
 ) -> Result<Html<String>, Response> {
-    let pagination = Pagination::new(query.page, Some(PUBLIC_PAGE_SIZE), PUBLIC_PAGE_SIZE);
-    let posts_query = PostEntity::find()
-        .filter(
-            Condition::any()
-                .add(PostColumn::Hidden.eq(false))
-                .add(PostColumn::Hidden.is_null()),
-        )
-        .order_by_desc(PostColumn::CreatedAt);
-    let paginator = posts_query.paginate(&database, pagination.size());
-    let total = paginator
-        .num_items()
-        .await
-        .traced_and_response(|e| tracing::error!("{}", e))?;
-    let posts = paginator
-        .fetch_page(pagination.offset())
-        .await
-        .traced_and_response(|e| tracing::error!("{}", e))?;
     let site = site_settings.read().await.clone();
+    let pagination = public_pagination(query.page, &site);
+    let (total, posts) = paginated_visible_posts(&database, pagination).await?;
 
     Ok(Html(
         theme_service
@@ -351,18 +333,18 @@ async fn display_post(
     }
 
     // Render markdown
-    let rendered_content = render_markdown(&post.content)
-        .traced_and_response(|e| tracing::error!("{}", e))?;
+    let rendered_content =
+        render_markdown(&post.content).traced_and_response(|e| tracing::error!("{}", e))?;
 
     let site = site_settings.read().await.clone();
-    let newer_post = PostEntity::find()
+    let newer_post = visible_posts_query()
         .filter(PostColumn::Id.ne(post.id))
         .filter(PostColumn::CreatedAt.gt(post.created_at))
         .order_by_asc(PostColumn::CreatedAt)
         .one(&database)
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
-    let older_post = PostEntity::find()
+    let older_post = visible_posts_query()
         .filter(PostColumn::Id.ne(post.id))
         .filter(PostColumn::CreatedAt.lt(post.created_at))
         .order_by_desc(PostColumn::CreatedAt)
@@ -377,10 +359,9 @@ async fn display_post(
                 "post",
                 json!({
                     "site": site_context(&site, &post_url(&post)),
-                    "page": { "kind": "post", "title": post.title, "description": post.description.clone().unwrap_or_else(|| excerpt(&post.content, 240)), "illustration": post.illustration.clone(), "toc_enabled": post.toc_enabled.unwrap_or(true), "math_enabled": post.math_enabled, "url": post_url(&post) },
+                    "page": { "kind": "post", "title": post.title, "description": post.description.clone().unwrap_or_else(|| excerpt(&post.content, 240)), "illustration": post.illustration.clone(), "url": post_url(&post) },
                     "content": rendered_content,
                     "post": post_detail(&post),
-                    "comments": comment_context(&site.comments, post.comments_enabled.unwrap_or(true)),
                     "newer_post": newer_post.as_ref().map(post_summary),
                     "older_post": older_post.as_ref().map(post_summary),
                 }),
@@ -411,16 +392,6 @@ fn site_context(site: &SiteSettings, current_url: &str) -> Value {
         "description": site.description,
         "language": if site.language.trim().is_empty() { "en" } else { site.language.as_str() },
         "favicon_url": site.favicon_url,
-        "manifest_url": site.manifest_url,
-        "search": {
-            "google_cse_id": site.search.google_cse_id,
-        },
-        "analytics": {
-            "google_analytics_id": site.analytics.google_analytics_id,
-            "clarity_project_id": site.analytics.clarity_project_id,
-            "cloudflare_beacon_token": site.analytics.cloudflare_beacon_token,
-        },
-        "head_html": site.head_html,
         "home_url": "/",
         "navigation": navigation.into_iter().map(|(label, url, translation_key)| json!({
             "label": label,
@@ -431,22 +402,10 @@ fn site_context(site: &SiteSettings, current_url: &str) -> Value {
     })
 }
 
-fn comment_context(settings: &crate::config::CommentSettings, post_enabled: bool) -> Value {
-    let provider = settings.provider.trim().to_ascii_lowercase();
-    let enabled = post_enabled
-        && matches!(
-            provider.as_str(),
-            "disqus" | "utterances" | "giscus" | "livere" | "twikoo" | "waline"
-        )
-        && settings.is_configured();
-    json!({
-        "enabled": enabled,
-        "disabled_for_post": !post_enabled,
-        "provider": provider,
-        "config": settings.config,
-    })
+fn public_pagination(page: Option<u64>, site: &SiteSettings) -> Pagination {
+    let page_size = site.public_posts_per_page();
+    Pagination::new(page, Some(page_size), page_size)
 }
-
 fn pagination_context(pagination: Pagination, total: u64, path: &str) -> Value {
     let total_pages = pagination.total_pages(total);
     let page = pagination.page();
@@ -505,9 +464,6 @@ fn post_summary(post: &Post) -> Value {
         "illustration": post.illustration,
         "tags": terms(&post.tags),
         "categories": terms(&post.categories),
-        "toc_enabled": post.toc_enabled.unwrap_or(true),
-        "math_enabled": post.math_enabled,
-        "comments_enabled": post.comments_enabled.unwrap_or(true),
     })
 }
 
@@ -527,6 +483,13 @@ fn taxonomy_terms(post: &Post, field: &str) -> Vec<String> {
 }
 
 async fn visible_posts(database: &DatabaseConnection) -> Result<Vec<Post>, Response> {
+    visible_posts_query()
+        .all(database)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))
+}
+
+fn visible_posts_query() -> sea_orm::Select<PostEntity> {
     PostEntity::find()
         .filter(
             Condition::any()
@@ -534,9 +497,22 @@ async fn visible_posts(database: &DatabaseConnection) -> Result<Vec<Post>, Respo
                 .add(PostColumn::Hidden.is_null()),
         )
         .order_by_desc(PostColumn::CreatedAt)
-        .all(database)
+}
+
+async fn paginated_visible_posts(
+    database: &DatabaseConnection,
+    pagination: Pagination,
+) -> Result<(u64, Vec<Post>), Response> {
+    let paginator = visible_posts_query().paginate(database, pagination.size());
+    let total = paginator
+        .num_items()
         .await
-        .traced_and_response(|e| tracing::error!("{}", e))
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    let posts = paginator
+        .fetch_page(pagination.offset())
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    Ok((total, posts))
 }
 
 fn post_detail(post: &Post) -> Value {
@@ -586,8 +562,8 @@ async fn serve_attachment(
 #[cfg(test)]
 mod tests {
     use super::{
-        SiteSettings, comment_context, encode_query_component, excerpt, pagination_context,
-        reading_minutes, site_context,
+        SiteSettings, encode_query_component, excerpt, pagination_context, reading_minutes,
+        site_context,
     };
     use crate::utils::Pagination;
 
@@ -629,60 +605,5 @@ mod tests {
             navigation,
             ["/archives", "/categories", "/tags", "/index.xml"]
         );
-    }
-
-    #[test]
-    fn exposes_site_integrations_without_theme_configuration() {
-        let context = site_context(
-            &SiteSettings {
-                search: crate::config::SearchSettings {
-                    google_cse_id: "search-id".to_string(),
-                },
-                analytics: crate::config::AnalyticsSettings {
-                    google_analytics_id: "G-123".to_string(),
-                    clarity_project_id: "clarity-id".to_string(),
-                    cloudflare_beacon_token: "cf-token".to_string(),
-                },
-                head_html: "<meta name=\"verification\" content=\"token\">".to_string(),
-                ..Default::default()
-            },
-            "/",
-        );
-
-        assert_eq!(context["search"]["google_cse_id"], "search-id");
-        assert_eq!(context["analytics"]["google_analytics_id"], "G-123");
-        assert_eq!(context["head_html"], "<meta name=\"verification\" content=\"token\">");
-    }
-
-    #[test]
-    fn exposes_configured_comment_providers_only_for_enabled_posts() {
-        let settings = crate::config::CommentSettings {
-            provider: "Giscus".to_string(),
-            config: [
-                ("repo".to_string(), "example/blog".to_string()),
-                ("repo_id".to_string(), "repo-id".to_string()),
-                ("category".to_string(), "General".to_string()),
-                ("category_id".to_string(), "category-id".to_string()),
-            ]
-            .into_iter()
-            .collect(),
-        };
-        assert_eq!(comment_context(&settings, true)["enabled"], true);
-        assert_eq!(comment_context(&settings, false)["enabled"], false);
-        assert_eq!(comment_context(&settings, true)["provider"], "giscus");
-        let incomplete = crate::config::CommentSettings {
-            provider: "giscus".to_string(),
-            config: [("repo".to_string(), "example/blog".to_string())]
-                .into_iter()
-                .collect(),
-        };
-        assert_eq!(comment_context(&incomplete, true)["enabled"], false);
-        let waline = crate::config::CommentSettings {
-            provider: "waline".to_string(),
-            config: [("server_url".to_string(), "https://comments.example".to_string())]
-                .into_iter()
-                .collect(),
-        };
-        assert_eq!(comment_context(&waline, true)["enabled"], true);
     }
 }
