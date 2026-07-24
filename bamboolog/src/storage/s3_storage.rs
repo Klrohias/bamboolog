@@ -23,10 +23,10 @@ impl S3StorageProvider {
         let mut loader =
             aws_config::defaults(BehaviorVersion::latest()).region(Region::new(region));
 
-        if let Some(endpoint_url) = config.endpoint_url.as_deref() {
-            if !endpoint_url.trim().is_empty() {
-                loader = loader.endpoint_url(endpoint_url.to_string());
-            }
+        if let Some(endpoint_url) = config.endpoint_url.as_deref()
+            && !endpoint_url.trim().is_empty()
+        {
+            loader = loader.endpoint_url(endpoint_url.to_string());
         }
 
         if let (Some(access_key_id), Some(secret_access_key)) =

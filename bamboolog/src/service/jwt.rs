@@ -95,7 +95,7 @@ impl From<JwtServiceSettings> for JwtServiceState {
         let decoding_key = DecodingKey::from_secret(value.secret.as_bytes());
         let encoding_key = EncodingKey::from_secret(value.secret.as_bytes());
         let mut validation = Validation::new(Algorithm::HS256);
-        validation.set_audience(&[value.audience.clone()]);
+        validation.set_audience(std::slice::from_ref(&value.audience));
 
         Self::new(decoding_key, validation, encoding_key, expire)
     }

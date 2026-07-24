@@ -8,14 +8,14 @@ use axum::{
 use crate::utils::ApiResponse;
 
 pub trait FailibleOperationExts<T, E> {
-    fn traced(self, op: impl FnOnce(&E) -> ()) -> Result<T, E>;
+    fn traced(self, op: impl FnOnce(&E)) -> Result<T, E>;
 }
 
 impl<T, E> FailibleOperationExts<T, E> for Result<T, E>
 where
     E: Display,
 {
-    fn traced(self, op: impl FnOnce(&E) -> ()) -> Result<T, E> {
+    fn traced(self, op: impl FnOnce(&E)) -> Result<T, E> {
         match self {
             Ok(v) => Ok(v),
             Err(e) => {
@@ -26,9 +26,13 @@ where
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Axum handlers use Response as their established rejection type."
+)]
 pub trait HttpFailibleOperationExts<T, E> {
     fn response(self) -> Result<T, Response>;
-    fn traced_and_response(self, op: impl FnOnce(&E) -> ()) -> Result<T, Response>;
+    fn traced_and_response(self, op: impl FnOnce(&E)) -> Result<T, Response>;
 }
 
 impl<T, E> HttpFailibleOperationExts<T, E> for Result<T, E>
@@ -46,7 +50,7 @@ where
         }
     }
 
-    fn traced_and_response(self, op: impl FnOnce(&E) -> ()) -> Result<T, Response> {
+    fn traced_and_response(self, op: impl FnOnce(&E)) -> Result<T, Response> {
         match self {
             Ok(v) => Ok(v),
             Err(e) => {

@@ -88,10 +88,10 @@ async fn serve_theme_static(
     Path(path): Path<String>,
     Extension(theme_service): Extension<ThemeService>,
 ) -> Result<Response, Response> {
-    Ok(theme_service
+    theme_service
         .serve_static(path)
         .await
-        .traced_and_response(|e| tracing::error!("{}", e))?)
+        .traced_and_response(|e| tracing::error!("{}", e))
 }
 
 async fn serve_attachment(

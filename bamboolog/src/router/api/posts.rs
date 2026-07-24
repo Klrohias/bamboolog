@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     entity,
     service::{jwt::JwtClaims, user::User},
-    utils::{ApiResponse, HttpFailibleOperationExts},
+    utils::{ApiResponse, HttpFailibleOperationExts, Pagination},
 };
 
 #[derive(Debug, Deserialize)]
@@ -24,7 +24,6 @@ pub struct PostCreateRequest {
     pub name: String,
     pub content: String,
     pub created_at: Option<i64>,
-    pub user: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,7 +32,6 @@ pub struct PostUpdateRequest {
     pub name: Option<String>,
     pub content: Option<String>,
     pub created_at: Option<i64>,
-    pub user: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +58,9 @@ pub struct PostListItem {
 pub struct PostListResponse {
     pub posts: Vec<PostListItem>,
     pub total: u64,
+    pub page: u64,
+    pub page_size: u64,
+    pub total_pages: u64,
 }
 
 pub fn get_routes() -> Router {
@@ -103,22 +104,30 @@ pub async fn list_posts(
         select.order_by_desc(column)
     };
 
-    let page = query.page.unwrap_or(1);
-    let page_size = query.page_size.unwrap_or(10);
+    let pagination = Pagination::new(query.page, query.page_size, 10);
 
-    let paginator = select.into_partial_model().paginate(&database, page_size);
+    let paginator = select
+        .into_partial_model()
+        .paginate(&database, pagination.size());
 
     let total = paginator
         .num_items()
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
+    let total_pages = pagination.total_pages(total);
 
     let posts = paginator
-        .fetch_page(page - 1)
+        .fetch_page(pagination.offset())
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
 
-    Ok(ApiResponse::ok(PostListResponse { posts, total }))
+    Ok(ApiResponse::ok(PostListResponse {
+        posts,
+        total,
+        page: pagination.page(),
+        page_size: pagination.size(),
+        total_pages,
+    }))
 }
 
 pub async fn get_post_content(
@@ -192,12 +201,12 @@ pub async fn create_post(
         name: ActiveValue::Set(post_payload.name),
         title: ActiveValue::Set(post_payload.title),
         content: ActiveValue::Set(post_payload.content),
-        author: ActiveValue::Set(post_payload.user.unwrap_or(user.id)),
+        author: ActiveValue::Set(user.id),
         created_at: post_payload
             .created_at
             .map(|x| {
                 DateTimeUtc::from_timestamp_secs(x)
-                    .map(|x| ActiveValue::Set(x))
+                    .map(ActiveValue::Set)
                     .unwrap_or(ActiveValue::NotSet)
             })
             .unwrap_or(ActiveValue::NotSet),
@@ -214,6 +223,7 @@ pub async fn create_post(
 pub async fn edit_post(
     Extension(database): Extension<DatabaseConnection>,
     Path(id): Path<i32>,
+    _claims: JwtClaims,
     Json(post_payload): Json<PostUpdateRequest>,
 ) -> Result<ApiResponse, Response> {
     let old_post = entity::post::Entity::find_by_id(id)
@@ -225,10 +235,6 @@ pub async fn edit_post(
     let mut active_model = old_post.into_active_model();
     if let Some(new_content) = post_payload.content {
         active_model.content = ActiveValue::Set(new_content);
-    }
-
-    if let Some(new_user) = post_payload.user {
-        active_model.author = ActiveValue::Set(new_user);
     }
 
     if let Some(new_title) = post_payload.title {
@@ -254,4 +260,134 @@ pub async fn edit_post(
         .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(()))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        Extension, Json,
+        body::Body,
+        extract::Query,
+        http::{Request, StatusCode},
+    };
+    use sea_orm::{
+        ActiveModelTrait, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection,
+        EntityTrait, Schema, Set,
+    };
+    use tower::ServiceExt;
+
+    use crate::{
+        entity::{self, user},
+        service::user::User,
+    };
+
+    use super::{PostListRequest, create_post, get_routes, list_posts};
+
+    async fn database_with_post_schema() -> DatabaseConnection {
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        let schema = Schema::new(DatabaseBackend::Sqlite);
+
+        for statement in [
+            schema.create_table_from_entity(user::Entity),
+            schema.create_table_from_entity(entity::post::Entity),
+        ] {
+            database.execute(&statement).await.unwrap();
+        }
+
+        database
+    }
+
+    async fn insert_user(database: &DatabaseConnection, id: i32) -> user::Model {
+        user::ActiveModel {
+            id: Set(id),
+            username: Set(format!("user-{id}")),
+            email: Set(format!("user-{id}@example.test")),
+            nickname: Set(format!("User {id}")),
+            password_hash: Set("password-hash".to_string()),
+            ..Default::default()
+        }
+        .insert(database)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn rejects_anonymous_post_edits_before_database_access() {
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        let app = get_routes().layer(Extension(database));
+        let request = Request::builder()
+            .method("POST")
+            .uri("/1")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"title":"changed"}"#))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn list_posts_returns_normalized_pagination_metadata() {
+        let database = database_with_post_schema().await;
+        let user = insert_user(&database, 1).await;
+
+        for name in ["first", "second"] {
+            entity::post::ActiveModel {
+                name: Set(name.to_string()),
+                title: Set(name.to_string()),
+                content: Set(String::new()),
+                author: Set(user.id),
+                ..Default::default()
+            }
+            .insert(&database)
+            .await
+            .unwrap();
+        }
+
+        let response = list_posts(
+            Extension(database),
+            Query(PostListRequest {
+                page: Some(0),
+                page_size: Some(1),
+                title: None,
+                name: None,
+                sort_by: Some("id".to_string()),
+                order: Some("asc".to_string()),
+            }),
+        )
+        .await
+        .unwrap();
+        let data = response.data.unwrap();
+
+        assert_eq!(data.posts.len(), 1);
+        assert_eq!(data.total, 2);
+        assert_eq!(data.page, 1);
+        assert_eq!(data.page_size, 1);
+        assert_eq!(data.total_pages, 2);
+    }
+
+    #[tokio::test]
+    async fn create_post_uses_the_authenticated_user_as_author() {
+        let database = database_with_post_schema().await;
+        let user = insert_user(&database, 1).await;
+        let request = serde_json::from_value(serde_json::json!({
+            "title": "Test post",
+            "name": "test-post",
+            "content": "Content",
+            "user": 999,
+        }))
+        .unwrap();
+
+        create_post(Extension(database.clone()), User(user), Json(request))
+            .await
+            .unwrap();
+
+        let post = entity::post::Entity::find()
+            .one(&database)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(post.author, 1);
+    }
 }

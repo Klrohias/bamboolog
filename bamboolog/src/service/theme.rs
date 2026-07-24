@@ -97,7 +97,7 @@ impl<'a> ThemeLoader<'a> {
             ));
         }
 
-        return Ok(theme_root);
+        Ok(theme_root)
     }
 
     fn setup_renderer_features(&self, renderer_env: &mut Environment<'static>) {
@@ -118,7 +118,7 @@ impl<'a> ThemeLoader<'a> {
         }
         let manifest = toml::from_str(&fs::read_to_string(manifest_file)?)?;
 
-        return Ok(manifest);
+        Ok(manifest)
     }
 
     pub fn get_renderer_env(&self) -> Result<Environment<'static>, ThemeError> {
@@ -163,13 +163,11 @@ impl ThemeService {
         let mut themes = Vec::new();
 
         if let Ok(entries) = fs::read_dir(theme_root) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    if entry.file_type()?.is_dir() {
-                        if let Some(name) = entry.file_name().to_str() {
-                            themes.push(name.to_owned());
-                        }
-                    }
+            for entry in entries.flatten() {
+                if entry.file_type()?.is_dir()
+                    && let Some(name) = entry.file_name().to_str()
+                {
+                    themes.push(name.to_owned());
                 }
             }
         }
