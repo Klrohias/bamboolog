@@ -16,12 +16,6 @@ pub struct Model {
     pub tags: Option<String>,
     pub categories: Option<String>,
     pub hidden: Option<bool>,
-    /// `None` preserves the site default (enabled) for existing posts.
-    pub toc_enabled: Option<bool>,
-    /// `None` preserves the active theme's default math rendering policy.
-    pub math_enabled: Option<bool>,
-    /// `None` preserves the site comment policy for existing posts.
-    pub comments_enabled: Option<bool>,
     #[sea_orm(default_expr = "Expr::current_timestamp()")]
     pub created_at: DateTimeUtc,
     // Nullable so existing SQLite databases can add this column in place.

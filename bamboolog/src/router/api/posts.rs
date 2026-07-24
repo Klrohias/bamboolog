@@ -30,9 +30,6 @@ pub struct PostCreateRequest {
     pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub hidden: Option<bool>,
-    pub toc_enabled: Option<bool>,
-    pub math_enabled: Option<bool>,
-    pub comments_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,9 +43,6 @@ pub struct PostUpdateRequest {
     pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub hidden: Option<bool>,
-    pub toc_enabled: Option<bool>,
-    pub math_enabled: Option<bool>,
-    pub comments_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,9 +67,6 @@ pub struct PostListItem {
     pub description: Option<String>,
     pub illustration: Option<String>,
     pub hidden: Option<bool>,
-    pub toc_enabled: Option<bool>,
-    pub math_enabled: Option<bool>,
-    pub comments_enabled: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,9 +83,6 @@ pub struct PostDetailResponse {
     pub tags: Vec<String>,
     pub categories: Vec<String>,
     pub hidden: bool,
-    pub toc_enabled: bool,
-    pub math_enabled: Option<bool>,
-    pub comments_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -204,8 +192,7 @@ pub async fn get_rendered_post_content(
             ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response()
         }
         Some(post) => ApiResponse::ok(
-            render_markdown(&post.content)
-                .traced_and_response(|e| tracing::error!("{}", e))?,
+            render_markdown(&post.content).traced_and_response(|e| tracing::error!("{}", e))?,
         )
         .into_response(),
     })
@@ -256,9 +243,6 @@ pub async fn create_post(
             post_payload.categories.unwrap_or_default(),
         ))),
         hidden: ActiveValue::Set(Some(post_payload.hidden.unwrap_or(false))),
-        toc_enabled: ActiveValue::Set(post_payload.toc_enabled),
-        math_enabled: ActiveValue::Set(post_payload.math_enabled),
-        comments_enabled: ActiveValue::Set(post_payload.comments_enabled),
         created_at: ActiveValue::Set(created_at.clone()),
         updated_at: ActiveValue::Set(Some(created_at)),
     };
@@ -325,18 +309,6 @@ pub async fn edit_post(
         active_model.hidden = ActiveValue::Set(Some(hidden));
     }
 
-    if let Some(toc_enabled) = post_payload.toc_enabled {
-        active_model.toc_enabled = ActiveValue::Set(Some(toc_enabled));
-    }
-
-    if let Some(math_enabled) = post_payload.math_enabled {
-        active_model.math_enabled = ActiveValue::Set(Some(math_enabled));
-    }
-
-    if let Some(comments_enabled) = post_payload.comments_enabled {
-        active_model.comments_enabled = ActiveValue::Set(Some(comments_enabled));
-    }
-
     active_model.updated_at = ActiveValue::Set(Some(Utc::now()));
 
     active_model
@@ -364,9 +336,6 @@ fn post_detail_response(post: entity::post::Model) -> PostDetailResponse {
         tags: deserialize_terms(post.tags),
         categories: deserialize_terms(post.categories),
         hidden: post.hidden.unwrap_or(false),
-        toc_enabled: post.toc_enabled.unwrap_or(true),
-        math_enabled: post.math_enabled,
-        comments_enabled: post.comments_enabled.unwrap_or(true),
     }
 }
 
@@ -505,8 +474,6 @@ mod tests {
             "tags": ["Rust", "Web"],
             "categories": ["Engineering"],
             "hidden": true,
-            "math_enabled": true,
-            "comments_enabled": false,
             "user": 999,
         }))
         .unwrap();
@@ -526,8 +493,6 @@ mod tests {
         assert_eq!(deserialize_terms(post.tags), ["Rust", "Web"]);
         assert_eq!(deserialize_terms(post.categories), ["Engineering"]);
         assert_eq!(post.hidden, Some(true));
-        assert_eq!(post.math_enabled, Some(true));
-        assert_eq!(post.comments_enabled, Some(false));
         assert!(post.updated_at.is_some());
     }
 

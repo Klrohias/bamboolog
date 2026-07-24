@@ -26,15 +26,6 @@
         <n-form-item :label="$t('posts.hidden')">
           <n-switch v-model:value="form.hidden" />
         </n-form-item>
-        <n-form-item :label="$t('posts.toc_enabled')">
-          <n-switch v-model:value="form.toc_enabled" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.math_enabled')">
-          <n-switch v-model:value="form.math_enabled" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.comments_enabled')">
-          <n-switch v-model:value="form.comments_enabled" />
-        </n-form-item>
         <n-form-item :label="$t('posts.image_storage')">
           <n-select
             v-model:value="storageEngineId"
@@ -99,10 +90,7 @@ const form = ref({
   illustration: '',
   categories: [] as string[],
   tags: [] as string[],
-  hidden: false,
-  toc_enabled: true,
-  math_enabled: false,
-  comments_enabled: true
+  hidden: false
 })
 
 const rules = {
@@ -113,7 +101,7 @@ const rules = {
 
 async function fetchPost() {
   editorReady.value = false
-  form.value = { title: '', name: '', content: '', description: '', illustration: '', categories: [], tags: [], hidden: false, toc_enabled: true, math_enabled: false, comments_enabled: true }
+  form.value = { title: '', name: '', content: '', description: '', illustration: '', categories: [], tags: [], hidden: false }
   if (!isEdit.value) {
     editorReady.value = true
     return
@@ -130,9 +118,6 @@ async function fetchPost() {
     form.value.categories = post.categories || []
     form.value.tags = post.tags || []
     form.value.hidden = post.hidden || false
-    form.value.toc_enabled = post.toc_enabled !== false
-    form.value.math_enabled = post.math_enabled === true
-    form.value.comments_enabled = post.comments_enabled !== false
   } catch (e: any) {
     message.error(t('posts.fetch_failed'))
     router.push('/posts')

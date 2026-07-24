@@ -23,8 +23,7 @@ fn get_default_asset_dir() -> String {
 
 impl ApplicationConfiguration {
     pub fn load() -> Result<Self, anyhow::Error> {
-        let config_path: String =
-            env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".into());
+        let config_path: String = env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".into());
         Self::from_path(PathBuf::from(config_path))
     }
 

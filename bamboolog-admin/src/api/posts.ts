@@ -10,9 +10,6 @@ export interface Post {
     tags?: string[]
     categories?: string[]
     hidden?: boolean
-    toc_enabled?: boolean
-    math_enabled?: boolean | null
-    comments_enabled?: boolean
     created_at: string
     updated_at?: string | null
 }
