@@ -1,8 +1,28 @@
 import api, { type ApiResponse } from './index'
 
+export type NavigationTarget = 'custom' | 'archives' | 'categories' | 'tags' | 'feed'
+
+export interface NavigationItem {
+    label: string
+    url: string
+    target: NavigationTarget
+}
+
+export interface SiteSettings {
+    site_name: string
+    base_url: string
+    copyright: string
+    description: string
+    language: string
+    favicon_url: string
+    navigation: NavigationItem[]
+    rss_enabled: boolean
+    sitemap_enabled: boolean
+    posts_per_page: number
+}
+
 export interface Settings {
-    // Add known settings keys here if needed, or keep generic
-    [key: string]: any
+    site: SiteSettings
 }
 
 export interface ThemeDetails {

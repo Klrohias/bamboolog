@@ -8,6 +8,16 @@
         <n-form-item :label="$t('posts.title')" path="title">
           <n-input v-model:value="form.title" :placeholder="$t('posts.title')" />
         </n-form-item>
+        <n-form-item :label="$t('posts.content')" path="content">
+          <n-spin v-if="!editorReady" size="small" />
+          <MarkdownEditor
+            v-else
+            v-model="form.content"
+            :storage-engine-id="storageEngineId ?? undefined"
+            style="width: 100%"
+            @upload-error="message.error(t('posts.image_upload_failed'))"
+          />
+        </n-form-item>
         <n-form-item :label="$t('posts.slug')" path="name">
           <n-input v-model:value="form.name" :placeholder="$t('posts.slug')" />
         </n-form-item>
@@ -32,16 +42,6 @@
             clearable
             :options="storageEngineOptions"
             :placeholder="$t('posts.default_storage')"
-          />
-        </n-form-item>
-        <n-form-item :label="$t('posts.content')" path="content">
-          <n-spin v-if="!editorReady" size="small" />
-          <MarkdownEditor
-            v-else
-            v-model="form.content"
-            :storage-engine-id="storageEngineId ?? undefined"
-            style="width: 100%"
-            @upload-error="message.error(t('posts.image_upload_failed'))"
           />
         </n-form-item>
         <n-form-item>

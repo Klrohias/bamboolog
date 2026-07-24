@@ -77,6 +77,17 @@ struct ThemeLoader<'a> {
     base_url: String,
 }
 
+fn installed_themes_directory(asset_dir: &Path) -> PathBuf {
+    asset_dir.join("themes").join("installed")
+}
+
+fn theme_config_path(asset_dir: &Path, theme_id: &str) -> PathBuf {
+    asset_dir
+        .join("themes")
+        .join("config")
+        .join(format!("{theme_id}.json"))
+}
+
 impl<'a> ThemeLoader<'a> {
     fn create_renderer() -> Environment<'static> {
         let mut environment = Environment::new();
@@ -125,7 +136,9 @@ impl<'a> ThemeLoader<'a> {
         let theme_root = self
             .application_configuration
             .asset_dir
-            .join(format!("themes/{}", self.theme_service_settings.current));
+            .join("themes")
+            .join("installed")
+            .join(&self.theme_service_settings.current);
         if !fs::exists(&theme_root)? {
             return Err(ThemeError::NoTheme(
                 self.theme_service_settings.current.to_owned(),
@@ -211,7 +224,7 @@ impl ThemeService {
     }
 
     pub async fn list_themes(&self) -> Result<Vec<String>, io::Error> {
-        let theme_root = self.dep_app_cfg.asset_dir.join("themes");
+        let theme_root = installed_themes_directory(&self.dep_app_cfg.asset_dir);
         let mut themes = Vec::new();
 
         if let Ok(entries) = fs::read_dir(theme_root) {
@@ -229,7 +242,7 @@ impl ThemeService {
 
     pub async fn list_theme_details(&self) -> Result<Vec<ThemeDetails>, io::Error> {
         let current = self.state.read().await.current_settings.current.clone();
-        let theme_root = self.dep_app_cfg.asset_dir.join("themes");
+        let theme_root = installed_themes_directory(&self.dep_app_cfg.asset_dir);
         let mut themes = Vec::new();
 
         if let Ok(entries) = fs::read_dir(theme_root) {
@@ -310,7 +323,7 @@ impl ThemeService {
         };
         let values = manifest.resolve_config(&values, true)?;
         write_theme_config_file(
-            &self.dep_app_cfg.asset_dir.join("themes").join(&id),
+            &theme_config_path(&self.dep_app_cfg.asset_dir, &id),
             &values,
         )?;
 
@@ -380,7 +393,10 @@ impl ThemeService {
         let static_root = self
             .dep_app_cfg
             .asset_dir
-            .join(format!("themes/{}/static", state.current_settings.current));
+            .join("themes")
+            .join("installed")
+            .join(&state.current_settings.current)
+            .join("static");
 
         let content_type = mime_guess::from_path(&path).first_or_octet_stream();
 
@@ -455,12 +471,11 @@ fn url_encode(value: String) -> String {
         .collect()
 }
 
-fn read_theme_config_file(theme_root: &Path) -> Result<JsonMap<String, JsonValue>, ThemeError> {
-    let path = theme_root.join("config.json");
-    if !path.exists() {
+fn read_theme_config_file(config_path: &Path) -> Result<JsonMap<String, JsonValue>, ThemeError> {
+    if !config_path.exists() {
         return Ok(JsonMap::new());
     }
-    Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+    Ok(serde_json::from_str(&fs::read_to_string(config_path)?)?)
 }
 
 fn read_theme_translations(theme_root: &Path) -> JsonMap<String, JsonValue> {
@@ -506,13 +521,16 @@ fn select_translation(translations: &JsonMap<String, JsonValue>, language: &str)
 }
 
 fn write_theme_config_file(
-    theme_root: &Path,
+    config_path: &Path,
     values: &JsonMap<String, JsonValue>,
 ) -> Result<(), ThemeError> {
-    let path = theme_root.join("config.json");
-    let temporary_path = theme_root.join("config.json.tmp");
+    let directory = config_path
+        .parent()
+        .expect("theme configuration paths always have a parent directory");
+    fs::create_dir_all(directory)?;
+    let temporary_path = config_path.with_extension("json.tmp");
     fs::write(&temporary_path, serde_json::to_string_pretty(values)?)?;
-    fs::rename(temporary_path, path)?;
+    fs::rename(temporary_path, config_path)?;
     Ok(())
 }
 
@@ -549,12 +567,12 @@ impl ReloadableService for ThemeService {
             }
             Ok(v) => v,
         };
-        let theme_root = self
-            .dep_app_cfg
-            .asset_dir
-            .join("themes")
-            .join(&settings.current);
-        let stored_config = match read_theme_config_file(&theme_root) {
+        let theme_root =
+            installed_themes_directory(&self.dep_app_cfg.asset_dir).join(&settings.current);
+        let stored_config = match read_theme_config_file(&theme_config_path(
+            &self.dep_app_cfg.asset_dir,
+            &settings.current,
+        )) {
             Ok(values) => values,
             Err(error) => {
                 tracing::error!("Failed to load theme configuration: {error}");
@@ -719,6 +737,11 @@ mod tests {
     #[test]
     fn writes_and_reads_theme_config_json() {
         let temporary_directory = tempfile::tempdir().unwrap();
+        let config_path = temporary_directory
+            .path()
+            .join("themes")
+            .join("config")
+            .join("journal.json");
         let values = serde_json::from_value(json!({
             "subtitle": "Personal notes",
             "show_reading_time": false,
@@ -726,13 +749,10 @@ mod tests {
         }))
         .unwrap();
 
-        write_theme_config_file(temporary_directory.path(), &values).unwrap();
+        write_theme_config_file(&config_path, &values).unwrap();
 
-        assert_eq!(
-            read_theme_config_file(temporary_directory.path()).unwrap(),
-            values
-        );
-        assert!(temporary_directory.path().join("config.json").is_file());
+        assert_eq!(read_theme_config_file(&config_path).unwrap(), values);
+        assert!(config_path.is_file());
     }
 
     #[test]
@@ -777,7 +797,7 @@ mod tests {
     async fn lists_manifest_details_and_marks_the_active_theme() {
         let temporary_directory = tempfile::tempdir().unwrap();
         let asset_dir = temporary_directory.path().to_path_buf();
-        let themes_directory = asset_dir.join("themes");
+        let themes_directory = asset_dir.join("themes").join("installed");
         let journal_directory = themes_directory.join("journal");
         std::fs::create_dir_all(&journal_directory).unwrap();
         std::fs::write(

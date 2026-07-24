@@ -25,12 +25,19 @@
         <n-form-item :label="$t('settings.navigation')">
           <n-space vertical style="width: 100%">
             <n-space v-for="(item, index) in settings.site.navigation" :key="index" align="center" style="width: 100%" :wrap="false">
-              <n-input v-model:value="item.label" :placeholder="$t('settings.navigation_label')" />
-              <n-input v-model:value="item.url" :placeholder="$t('settings.navigation_url')" />
+              <n-select v-model:value="item.target" :options="navigationTargetOptions" style="width: 180px" />
+              <n-input v-if="item.target === 'custom'" v-model:value="item.label" :placeholder="$t('settings.navigation_label')" />
+              <n-input v-if="item.target === 'custom'" v-model:value="item.url" :placeholder="$t('settings.navigation_url')" />
               <n-button type="error" secondary @click="removeNavigation(index)">{{ $t('common.delete') }}</n-button>
             </n-space>
             <n-button dashed @click="addNavigation">{{ $t('settings.add_navigation') }}</n-button>
           </n-space>
+        </n-form-item>
+        <n-form-item :label="$t('settings.rss_enabled')">
+          <n-switch v-model:value="settings.site.rss_enabled" />
+        </n-form-item>
+        <n-form-item :label="$t('settings.sitemap_enabled')">
+          <n-switch v-model:value="settings.site.sitemap_enabled" />
         </n-form-item>
         <n-form-item :label="$t('settings.posts_per_page')">
           <n-input-number v-model:value="settings.site.posts_per_page" :min="1" :max="100" style="width: 100%" />
@@ -43,14 +50,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { settingsApi } from '@/api/settings'
+import { settingsApi, type NavigationItem, type NavigationTarget, type Settings } from '@/api/settings'
 
 const { t } = useI18n()
 const message = useMessage()
-const settings = ref({
+const settings = ref<Settings>({
   site: {
     site_name: '',
     base_url: '',
@@ -58,18 +65,31 @@ const settings = ref({
     favicon_url: '',
     description: '',
     copyright: '',
-    navigation: [] as Array<{ label: string; url: string }>,
+    navigation: [] as NavigationItem[],
+    rss_enabled: true,
+    sitemap_enabled: true,
     posts_per_page: 10
   }
 })
 
+const navigationTargetOptions = computed(() => [
+  { label: t('settings.navigation_target_custom'), value: 'custom' },
+  { label: t('settings.navigation_target_archives'), value: 'archives' },
+  { label: t('settings.navigation_target_categories'), value: 'categories' },
+  { label: t('settings.navigation_target_tags'), value: 'tags' },
+  { label: t('settings.navigation_target_feed'), value: 'feed' }
+])
+
 async function fetchSettings() {
   try {
     const { data } = await settingsApi.get()
-    settings.value = data.data as any
+    settings.value = data.data
     settings.value.site.navigation ||= []
+    settings.value.site.navigation = settings.value.site.navigation.map(normalizeNavigationItem)
     settings.value.site.language ||= 'en'
     settings.value.site.favicon_url ||= ''
+    settings.value.site.rss_enabled ??= true
+    settings.value.site.sitemap_enabled ??= true
     settings.value.site.posts_per_page ||= 10
   } catch (e) {
     message.error(t('settings.fetch_failed'))
@@ -77,7 +97,16 @@ async function fetchSettings() {
 }
 
 function addNavigation() {
-  settings.value.site.navigation.push({ label: '', url: '' })
+  settings.value.site.navigation.push({ label: '', url: '', target: 'custom' })
+}
+
+function normalizeNavigationItem(item: Partial<NavigationItem>): NavigationItem {
+  const target: NavigationTarget = item.target || 'custom'
+  return {
+    label: item.label || '',
+    url: item.url || '',
+    target
+  }
 }
 
 function removeNavigation(index: number) {

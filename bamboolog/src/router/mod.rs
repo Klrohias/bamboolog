@@ -1,5 +1,6 @@
 mod admin;
 mod api;
+mod information;
 mod pages;
 
 use std::sync::Arc;
@@ -12,5 +13,6 @@ pub fn get_routes(_config: &Arc<ApplicationConfiguration>) -> Router {
     Router::new()
         .nest("/admin", admin::get_routes())
         .nest("/api", api::get_routes())
+        .merge(information::get_routes())
         .merge(pages::get_routes())
 }
