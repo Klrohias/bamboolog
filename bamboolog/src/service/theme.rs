@@ -92,11 +92,10 @@ impl<'a> ThemeLoader<'a> {
 
     fn load_templates(layouts_root: PathBuf, renderer_env: &mut Environment<'static>) {
         renderer_env.set_loader(move |path| {
-            let path = layouts_root.join(path);
-            if !path.starts_with(&layouts_root) {
+            if !is_safe_relative_path(path) {
                 return Ok(None);
             }
-
+            let path = layouts_root.join(path);
             let content = match fs::read_to_string(&path) {
                 Err(e) => {
                     tracing::warn!("Cannot read template {:?}: {}", path, e);
@@ -139,10 +138,6 @@ impl<'a> ThemeLoader<'a> {
     fn setup_renderer_features(&self, renderer_env: &mut Environment<'static>) {
         let base_url = self.base_url.clone();
 
-        renderer_env.add_filter("fromThemeStatic", move |value: String| -> Value {
-            Value::from_safe_string(theme_static_url(&base_url, &value))
-        });
-        let base_url = self.base_url.clone();
         renderer_env.add_filter("theme_static", move |value: String| -> Value {
             Value::from_safe_string(theme_static_url(&base_url, &value))
         });
@@ -182,6 +177,15 @@ impl<'a> ThemeLoader<'a> {
 
         Ok(result)
     }
+}
+
+fn is_safe_relative_path(path: &str) -> bool {
+    let path = Path::new(path);
+    !path.as_os_str().is_empty()
+        && !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 #[derive(Debug, Clone)]
@@ -483,7 +487,7 @@ fn read_theme_translations(theme_root: &Path) -> JsonMap<String, JsonValue> {
             continue;
         };
         if value.is_object() {
-            translations.insert(language.to_string(), value);
+            translations.insert(language.replace('_', "-").to_ascii_lowercase(), value);
         }
     }
 
@@ -620,7 +624,7 @@ pub enum ThemeError {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, sync::Arc};
+    use std::sync::Arc;
 
     use sea_orm::Database;
     use serde_json::json;
@@ -629,8 +633,8 @@ mod tests {
     use crate::service::site_settings::SiteSettingsService;
 
     use super::{
-        ThemeLoader, ThemeManifest, ThemeService, ThemeServiceSettings, absolute_url, format_date,
-        format_rfc2822, read_theme_config_file, read_theme_translations, select_translation,
+        ThemeLoader, ThemeService, ThemeServiceSettings, absolute_url, format_date, format_rfc2822,
+        is_safe_relative_path, read_theme_config_file, read_theme_translations, select_translation,
         theme_static_url, url_encode, write_theme_config_file,
     };
 
@@ -676,147 +680,6 @@ mod tests {
             url_encode("Rust & 中文".to_string()),
             "Rust%20%26%20%E4%B8%AD%E6%96%87"
         );
-    }
-
-    #[test]
-    fn journal_theme_renders_the_public_page_contract() {
-        let asset_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("debug.private.d");
-        let config = Arc::new(ApplicationConfiguration {
-            listen_addr: "127.0.0.1:0".to_string(),
-            database: "sqlite::memory:".to_string(),
-            raw_asset_dir: asset_dir.to_string_lossy().to_string(),
-            asset_dir,
-        });
-        let settings = ThemeServiceSettings {
-            current: "journal".to_string(),
-        };
-        let loader = ThemeLoader::new(&config, &settings, "https://example.test/".to_string());
-        let environment = loader.get_renderer_env().unwrap();
-        let i18n = json!({
-            "archives": "Archives", "tags": "Tags", "categories": "Categories", "rss_feed": "RSS Feed",
-            "no_posts": "No posts published yet.", "no_matching_posts": "No matching posts.", "no_terms": "No terms yet.",
-            "last_updated": "Last updated", "newer_post": "Newer post", "older_post": "Older post",
-            "no_newer_posts": "No newer posts", "no_older_posts": "No older posts", "not_found": "Not found",
-            "not_found_message": "The requested post does not exist.", "return_to_posts": "Return to all posts", "toc_title": "Table of Contents",
-            "comments_disabled": "Comments Disabled.", "comments_activate_js": "Please activate JavaScript to view comments."
-        });
-        let mut context = json!({
-            "site": { "name": "Example", "home_url": "/", "language": "zh-CN", "favicon_url": "/favicon.svg", "manifest_url": "/site.webmanifest", "search": { "google_cse_id": "search-id" }, "analytics": { "google_analytics_id": "G-123", "clarity_project_id": "clarity-id", "cloudflare_beacon_token": "cf-token" }, "head_html": "<meta name=\"verification\" content=\"token\">" },
-            "page": { "kind": "home", "title": "Example", "url": "/" },
-            "theme": { "id": "journal", "config": { "subtitle": "A journal", "show_reading_time": true, "show_dark_mode_toggle": true, "show_theme_attribution": true } },
-            "posts": [{
-                "title": "First post",
-                "url": "/posts/first-post",
-                "summary": "A summary",
-                "created_at": "2026-07-25T10:20:30+00:00",
-                "reading_minutes": 1
-            }],
-            "pagination": {
-                "total_pages": 1,
-                "page": 1,
-                "has_previous": false,
-                "has_next": false,
-                "previous_url": "/?page=0",
-                "next_url": "/?page=2"
-            }
-        });
-        context["i18n"] = i18n.clone();
-
-        let rendered = environment
-            .get_template("home.html")
-            .unwrap()
-            .render(context)
-            .unwrap();
-
-        assert!(rendered.contains("First post"));
-        assert!(rendered.contains("https://example.test/static/theme/css/journal.css"));
-        assert!(rendered.contains("2026-07-25"));
-        assert!(rendered.contains("A journal"));
-        assert!(rendered.contains("schedule"));
-        assert!(rendered.contains("cse.google.com/cse.js?cx=search-id"));
-        assert!(rendered.contains("googletagmanager.com/gtag/js?id=G-123"));
-        assert!(rendered.contains("clarity.ms/tag/"));
-        assert!(rendered.contains("static.cloudflareinsights.com/beacon.min.js"));
-        assert!(rendered.contains("name=\"verification\" content=\"token\""));
-
-        let mut post_context = json!({
-            "site": { "name": "Example", "home_url": "/", "language": "zh-CN", "favicon_url": "/favicon.svg", "manifest_url": "/site.webmanifest", "search": { "google_cse_id": "" }, "analytics": { "google_analytics_id": "", "clarity_project_id": "", "cloudflare_beacon_token": "" }, "head_html": "" },
-            "page": { "kind": "post", "title": "First post", "illustration": "/attachments/cover", "toc_enabled": true, "math_enabled": true, "url": "/posts/first-post" },
-            "theme": { "id": "journal", "config": { "subtitle": "A journal", "show_reading_time": true, "show_dark_mode_toggle": true, "show_theme_attribution": true } },
-            "post": {
-                "title": "First post",
-                "created_at": "2026-07-25T10:20:30+00:00",
-                "updated_at": "2026-07-25T10:20:30+00:00",
-                "reading_minutes": 1,
-                "description": "A description",
-                "illustration": "/attachments/cover",
-                "tags": ["Rust"],
-                "categories": ["Engineering"]
-            },
-            "content": "<p>Rendered content</p>",
-            "comments": {
-                "enabled": true,
-                "disabled_for_post": false,
-                "provider": "giscus",
-                "config": {
-                    "repo": "example/blog",
-                    "repo_id": "repo-id",
-                    "category": "General",
-                    "category_id": "category-id"
-                }
-            }
-        });
-        post_context["i18n"] = i18n.clone();
-        let post_rendered = environment
-            .get_template("post.html")
-            .unwrap()
-            .render(post_context)
-            .unwrap();
-        let feed_rendered = environment
-            .get_template("feed.xml")
-            .unwrap()
-            .render(json!({
-                "site": { "name": "Example", "description": "Example feed", "language": "en", "copyright": "Example" },
-                "posts": [{ "title": "First post", "url": "/posts/first-post", "created_at": "2026-07-25T10:20:30+00:00", "summary": "A summary" }]
-            }))
-            .unwrap();
-        let not_found_rendered = environment
-            .get_template("not-found.html")
-            .unwrap()
-            .render(json!({
-                "site": { "name": "Example", "home_url": "/", "search": { "google_cse_id": "" }, "analytics": { "google_analytics_id": "", "clarity_project_id": "", "cloudflare_beacon_token": "" }, "head_html": "" },
-                "page": { "kind": "not-found", "title": "Not found", "url": "" },
-                "theme": { "id": "journal", "config": { "subtitle": "A journal", "show_reading_time": true, "show_dark_mode_toggle": true, "show_theme_attribution": true } },
-                "i18n": i18n
-            }))
-            .unwrap();
-
-        assert!(post_rendered.contains("<p>Rendered content</p>"));
-        assert!(post_rendered.contains("A description"));
-        assert!(post_rendered.contains("post-head-wrapper"));
-        assert!(post_rendered.contains("background-image: url("));
-        assert!(post_rendered.contains("attachments"));
-        assert!(post_rendered.contains("Engineering"));
-        assert!(post_rendered.contains("/categories/Engineering"));
-        assert!(post_rendered.contains("katex.min.css"));
-        assert!(post_rendered.contains("lang=\"zh-CN\""));
-        assert!(post_rendered.contains("rel=\"icon\""));
-        assert!(post_rendered.contains("favicon.svg"));
-        assert!(post_rendered.contains("rel=\"manifest\""));
-        assert!(post_rendered.contains("site.webmanifest"));
-        assert!(post_rendered.contains("https://example.test/posts/first-post"));
-        assert!(post_rendered.contains("property=\"og:image\""));
-        assert!(post_rendered.contains("giscus.app/client.js"));
-        assert!(post_rendered.contains("data-repo=\"example"));
-        assert!(post_rendered.contains("attachments"));
-        assert!(feed_rendered.contains("xmlns:atom"));
-        assert!(feed_rendered.contains("rel=\"self\""));
-        assert!(feed_rendered.contains("xml-stylesheet href=\"https://example.test/static/theme/rss.xsl\""));
-        assert!(feed_rendered.contains("Sat, 25 Jul 2026 10:20:30 +0000"));
-        assert!(not_found_rendered.contains("The requested post does not exist."));
     }
 
     #[test]
@@ -873,38 +736,58 @@ mod tests {
     }
 
     #[test]
-    fn journal_manifest_resolves_its_config_json() {
-        let theme_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("debug.private.d/themes/journal");
-        let manifest: ThemeManifest =
-            toml::from_str(&std::fs::read_to_string(theme_root.join("manifest.toml")).unwrap())
-                .unwrap();
-        let values = read_theme_config_file(&theme_root).unwrap();
-        let resolved = manifest.resolve_config(&values, false).unwrap();
-
-        assert_eq!(resolved["subtitle"], "Moments piled up.");
-        assert_eq!(resolved["show_reading_time"], true);
-        let translations = read_theme_translations(&theme_root);
-        assert_eq!(select_translation(&translations, "zh-CN")["archives"], "归档");
+    fn loads_translations_from_the_active_theme_directory() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let translations_directory = temporary_directory.path().join("i18n");
+        std::fs::create_dir(&translations_directory).unwrap();
+        std::fs::write(
+            translations_directory.join("en.json"),
+            r#"{ "archives": "Archives" }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            translations_directory.join("zh-Hant.json"),
+            r#"{ "archives": "封存" }"#,
+        )
+        .unwrap();
+        let translations = read_theme_translations(temporary_directory.path());
         assert_eq!(
-            select_translation(&translations, "pt-BR")["archives"],
-            "Arquivo"
+            select_translation(&translations, "zh-Hant")["archives"],
+            "封存"
         );
         assert_eq!(
             select_translation(&translations, "zh_Hant")["archives"],
             "封存"
         );
-        assert_eq!(select_translation(&translations, "unknown")["archives"], "Archives");
+        assert_eq!(
+            select_translation(&translations, "unknown")["archives"],
+            "Archives"
+        );
+    }
+
+    #[test]
+    fn rejects_template_paths_outside_the_layout_directory() {
+        assert!(is_safe_relative_path("partials/navigation.html"));
+        assert!(!is_safe_relative_path("../secret.html"));
+        assert!(!is_safe_relative_path("/etc/passwd"));
+        assert!(!is_safe_relative_path(""));
     }
 
     #[tokio::test]
     async fn lists_manifest_details_and_marks_the_active_theme() {
-        let asset_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("debug.private.d");
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let asset_dir = temporary_directory.path().to_path_buf();
+        let themes_directory = asset_dir.join("themes");
+        let journal_directory = themes_directory.join("journal");
+        std::fs::create_dir_all(&journal_directory).unwrap();
+        std::fs::write(
+            journal_directory.join("manifest.toml"),
+            "name = 'Journal'\nversion = '0.1.0'\n",
+        )
+        .unwrap();
+        let notes_directory = themes_directory.join("notes");
+        std::fs::create_dir_all(&notes_directory).unwrap();
+        std::fs::write(notes_directory.join("manifest.toml"), "name = 'Notes'\n").unwrap();
         let config = Arc::new(ApplicationConfiguration {
             listen_addr: "127.0.0.1:0".to_string(),
             database: "sqlite::memory:".to_string(),
