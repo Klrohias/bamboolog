@@ -5,8 +5,16 @@ export interface Post {
     title: string
     name: string
     content: string
+    description?: string | null
+    illustration?: string | null
+    tags?: string[]
+    categories?: string[]
+    hidden?: boolean
+    toc_enabled?: boolean
+    math_enabled?: boolean | null
+    comments_enabled?: boolean
     created_at: string
-    updated_at: string
+    updated_at?: string | null
 }
 
 export interface PostListResponse {

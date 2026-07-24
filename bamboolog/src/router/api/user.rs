@@ -142,6 +142,13 @@ async fn update_me(
     }
 
     if let (Some(old_password), Some(new_password)) = (&req.old_password, &req.new_password) {
+        if new_password.is_empty() {
+            return Err(ApiResponse::code_and_message(
+                StatusCode::BAD_REQUEST,
+                "New password cannot be empty",
+            )
+            .into_response());
+        }
         let current_password_hash = user.password_hash.clone().unwrap();
         if !bcrypt::verify(old_password, &current_password_hash)
             .traced_and_response(|e| tracing::error!("{}", e))?

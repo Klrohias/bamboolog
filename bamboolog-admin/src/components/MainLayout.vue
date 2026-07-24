@@ -62,7 +62,9 @@ import {
   PersonOutline,
   LogOutOutline,
   ImageOutline,
-  CloudOutline
+  CloudOutline,
+  ColorPaletteOutline,
+  OptionsOutline
 } from '@vicons/ionicons5'
 import { setAuthToken } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
@@ -89,6 +91,16 @@ const menuOptions = computed<MenuOption[]>(() => [
     label: () => h(RouterLink, { to: '/settings' }, { default: () => t('common.settings') }),
     key: 'settings',
     icon: renderIcon(SettingsOutline)
+  },
+  {
+    label: () => h(RouterLink, { to: '/themes' }, { default: () => t('common.themes') }),
+    key: 'themes',
+    icon: renderIcon(ColorPaletteOutline)
+  },
+  {
+    label: () => h(RouterLink, { to: '/theme-settings' }, { default: () => t('common.theme_config') }),
+    key: 'theme-settings',
+    icon: renderIcon(OptionsOutline)
   },
   {
     label: () => h(RouterLink, { to: '/attachments' }, { default: () => t('common.attachments') }),
@@ -123,6 +135,8 @@ const userOptions = computed(() => [
 const currentRouteLabel = computed(() => {
   if (activeKey.value === 'posts') return t('common.posts')
   if (activeKey.value === 'settings') return t('common.settings')
+  if (activeKey.value === 'themes') return t('common.themes')
+  if (activeKey.value === 'theme-settings') return t('common.theme_config')
   if (activeKey.value === 'attachments') return t('common.attachments')
   if (activeKey.value === 'storage-engines') return 'Storage'
   return t('common.dashboard')
@@ -133,6 +147,8 @@ watch(
   (path) => {
     if (path.startsWith('/posts')) activeKey.value = 'posts'
     else if (path.startsWith('/settings')) activeKey.value = 'settings'
+    else if (path.startsWith('/themes')) activeKey.value = 'themes'
+    else if (path.startsWith('/theme-settings')) activeKey.value = 'theme-settings'
     else if (path.startsWith('/attachments')) activeKey.value = 'attachments'
     else if (path.startsWith('/storage-engines')) activeKey.value = 'storage-engines'
     else activeKey.value = null

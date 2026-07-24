@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DerivePartialModel,
     EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder,
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     entity,
     service::{jwt::JwtClaims, user::User},
-    utils::{ApiResponse, HttpFailibleOperationExts, Pagination},
+    utils::{ApiResponse, HttpFailibleOperationExts, Pagination, render_markdown},
 };
 
 #[derive(Debug, Deserialize)]
@@ -24,6 +25,14 @@ pub struct PostCreateRequest {
     pub name: String,
     pub content: String,
     pub created_at: Option<i64>,
+    pub description: Option<String>,
+    pub illustration: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub categories: Option<Vec<String>>,
+    pub hidden: Option<bool>,
+    pub toc_enabled: Option<bool>,
+    pub math_enabled: Option<bool>,
+    pub comments_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,6 +41,14 @@ pub struct PostUpdateRequest {
     pub name: Option<String>,
     pub content: Option<String>,
     pub created_at: Option<i64>,
+    pub description: Option<String>,
+    pub illustration: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub categories: Option<Vec<String>>,
+    pub hidden: Option<bool>,
+    pub toc_enabled: Option<bool>,
+    pub math_enabled: Option<bool>,
+    pub comments_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +69,32 @@ pub struct PostListItem {
     pub name: String,
     pub author: i32,
     pub created_at: DateTimeUtc,
+    pub updated_at: Option<DateTimeUtc>,
+    pub description: Option<String>,
+    pub illustration: Option<String>,
+    pub hidden: Option<bool>,
+    pub toc_enabled: Option<bool>,
+    pub math_enabled: Option<bool>,
+    pub comments_enabled: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PostDetailResponse {
+    pub id: i32,
+    pub title: String,
+    pub name: String,
+    pub content: String,
+    pub author: i32,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
+    pub description: Option<String>,
+    pub illustration: Option<String>,
+    pub tags: Vec<String>,
+    pub categories: Vec<String>,
+    pub hidden: bool,
+    pub toc_enabled: bool,
+    pub math_enabled: Option<bool>,
+    pub comments_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,7 +186,7 @@ pub async fn get_post_content(
         None => {
             ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response()
         }
-        Some(post) => ApiResponse::ok(post).into_response(),
+        Some(post) => ApiResponse::ok(post_detail_response(post)).into_response(),
     })
 }
 
@@ -161,7 +204,7 @@ pub async fn get_rendered_post_content(
             ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response()
         }
         Some(post) => ApiResponse::ok(
-            markdown::to_html_with_options(&post.content, &markdown::Options::gfm())
+            render_markdown(&post.content)
                 .traced_and_response(|e| tracing::error!("{}", e))?,
         )
         .into_response(),
@@ -196,20 +239,28 @@ pub async fn create_post(
     User(user): User,
     Json(post_payload): Json<PostCreateRequest>,
 ) -> Result<ApiResponse, Response> {
+    let created_at = post_payload
+        .created_at
+        .and_then(DateTimeUtc::from_timestamp_secs)
+        .unwrap_or_else(Utc::now);
     let active_model = entity::post::ActiveModel {
         id: ActiveValue::NotSet,
         name: ActiveValue::Set(post_payload.name),
         title: ActiveValue::Set(post_payload.title),
         content: ActiveValue::Set(post_payload.content),
         author: ActiveValue::Set(user.id),
-        created_at: post_payload
-            .created_at
-            .map(|x| {
-                DateTimeUtc::from_timestamp_secs(x)
-                    .map(ActiveValue::Set)
-                    .unwrap_or(ActiveValue::NotSet)
-            })
-            .unwrap_or(ActiveValue::NotSet),
+        description: ActiveValue::Set(post_payload.description),
+        illustration: ActiveValue::Set(post_payload.illustration),
+        tags: ActiveValue::Set(Some(serialize_terms(post_payload.tags.unwrap_or_default()))),
+        categories: ActiveValue::Set(Some(serialize_terms(
+            post_payload.categories.unwrap_or_default(),
+        ))),
+        hidden: ActiveValue::Set(Some(post_payload.hidden.unwrap_or(false))),
+        toc_enabled: ActiveValue::Set(post_payload.toc_enabled),
+        math_enabled: ActiveValue::Set(post_payload.math_enabled),
+        comments_enabled: ActiveValue::Set(post_payload.comments_enabled),
+        created_at: ActiveValue::Set(created_at.clone()),
+        updated_at: ActiveValue::Set(Some(created_at)),
     };
 
     active_model
@@ -254,12 +305,84 @@ pub async fn edit_post(
         active_model.name = ActiveValue::Set(new_name);
     }
 
+    if let Some(description) = post_payload.description {
+        active_model.description = ActiveValue::Set(Some(description));
+    }
+
+    if let Some(illustration) = post_payload.illustration {
+        active_model.illustration = ActiveValue::Set(Some(illustration));
+    }
+
+    if let Some(tags) = post_payload.tags {
+        active_model.tags = ActiveValue::Set(Some(serialize_terms(tags)));
+    }
+
+    if let Some(categories) = post_payload.categories {
+        active_model.categories = ActiveValue::Set(Some(serialize_terms(categories)));
+    }
+
+    if let Some(hidden) = post_payload.hidden {
+        active_model.hidden = ActiveValue::Set(Some(hidden));
+    }
+
+    if let Some(toc_enabled) = post_payload.toc_enabled {
+        active_model.toc_enabled = ActiveValue::Set(Some(toc_enabled));
+    }
+
+    if let Some(math_enabled) = post_payload.math_enabled {
+        active_model.math_enabled = ActiveValue::Set(Some(math_enabled));
+    }
+
+    if let Some(comments_enabled) = post_payload.comments_enabled {
+        active_model.comments_enabled = ActiveValue::Set(Some(comments_enabled));
+    }
+
+    active_model.updated_at = ActiveValue::Set(Some(Utc::now()));
+
     active_model
         .update(&database)
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(()))
+}
+
+fn post_detail_response(post: entity::post::Model) -> PostDetailResponse {
+    PostDetailResponse {
+        id: post.id,
+        title: post.title,
+        name: post.name,
+        content: post.content,
+        author: post.author,
+        created_at: post.created_at,
+        updated_at: post
+            .updated_at
+            .clone()
+            .unwrap_or_else(|| post.created_at.clone()),
+        description: post.description,
+        illustration: post.illustration,
+        tags: deserialize_terms(post.tags),
+        categories: deserialize_terms(post.categories),
+        hidden: post.hidden.unwrap_or(false),
+        toc_enabled: post.toc_enabled.unwrap_or(true),
+        math_enabled: post.math_enabled,
+        comments_enabled: post.comments_enabled.unwrap_or(true),
+    }
+}
+
+fn serialize_terms(terms: Vec<String>) -> String {
+    let terms = terms
+        .into_iter()
+        .map(|term| term.trim().to_string())
+        .filter(|term| !term.is_empty())
+        .collect::<Vec<_>>();
+    serde_json::to_string(&terms).expect("serializing strings never fails")
+}
+
+pub(crate) fn deserialize_terms(value: Option<String>) -> Vec<String> {
+    value
+        .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -281,7 +404,9 @@ mod tests {
         service::user::User,
     };
 
-    use super::{PostListRequest, create_post, get_routes, list_posts};
+    use super::{
+        PostListRequest, create_post, deserialize_terms, get_routes, list_posts, serialize_terms,
+    };
 
     async fn database_with_post_schema() -> DatabaseConnection {
         let database = Database::connect("sqlite::memory:").await.unwrap();
@@ -375,6 +500,13 @@ mod tests {
             "title": "Test post",
             "name": "test-post",
             "content": "Content",
+            "description": "A concise description",
+            "illustration": "/attachments/cover",
+            "tags": ["Rust", "Web"],
+            "categories": ["Engineering"],
+            "hidden": true,
+            "math_enabled": true,
+            "comments_enabled": false,
             "user": 999,
         }))
         .unwrap();
@@ -389,5 +521,25 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(post.author, 1);
+        assert_eq!(post.description.as_deref(), Some("A concise description"));
+        assert_eq!(post.illustration.as_deref(), Some("/attachments/cover"));
+        assert_eq!(deserialize_terms(post.tags), ["Rust", "Web"]);
+        assert_eq!(deserialize_terms(post.categories), ["Engineering"]);
+        assert_eq!(post.hidden, Some(true));
+        assert_eq!(post.math_enabled, Some(true));
+        assert_eq!(post.comments_enabled, Some(false));
+        assert!(post.updated_at.is_some());
+    }
+
+    #[test]
+    fn serializes_terms_as_a_clean_array() {
+        assert_eq!(
+            serialize_terms(vec![" Rust ".to_string(), String::new(), "Web".to_string()]),
+            r#"["Rust","Web"]"#
+        );
+        assert_eq!(
+            deserialize_terms(Some("not json".to_string())),
+            Vec::<String>::new()
+        );
     }
 }

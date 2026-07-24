@@ -11,8 +11,21 @@ pub struct Model {
     pub title: String,
     pub content: String,
     pub author: i32,
+    pub description: Option<String>,
+    pub illustration: Option<String>,
+    pub tags: Option<String>,
+    pub categories: Option<String>,
+    pub hidden: Option<bool>,
+    /// `None` preserves the site default (enabled) for existing posts.
+    pub toc_enabled: Option<bool>,
+    /// `None` preserves the active theme's default math rendering policy.
+    pub math_enabled: Option<bool>,
+    /// `None` preserves the site comment policy for existing posts.
+    pub comments_enabled: Option<bool>,
     #[sea_orm(default_expr = "Expr::current_timestamp()")]
     pub created_at: DateTimeUtc,
+    // Nullable so existing SQLite databases can add this column in place.
+    pub updated_at: Option<DateTimeUtc>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

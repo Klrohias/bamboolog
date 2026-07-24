@@ -11,8 +11,8 @@ use axum::{
     routing::{delete, get, post, put},
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    IntoActiveModel, PaginatorTrait, QueryFilter, Set, TransactionTrait,
 };
 use serde::Deserialize;
 
@@ -52,8 +52,7 @@ async fn create_engine(
     _user: JwtClaims,
     Json(payload): Json<CreateEngineRequest>,
 ) -> Result<Response, Response> {
-    validate_storage_engine_config(&payload.kind, payload.config_json.as_deref())
-        .traced_and_response(|e| tracing::error!("{}", e))?;
+    validate_engine_config(&payload.kind, payload.config_json.as_deref())?;
     let is_default = payload.is_default.unwrap_or(false);
     let enabled = payload.enabled.unwrap_or(true);
     if is_default && !enabled {
@@ -63,10 +62,6 @@ async fn create_engine(
         )
         .into_response());
     }
-    if is_default {
-        clear_default_engines(&db).await?;
-    }
-
     let engine = storage_engine::ActiveModel {
         name: Set(payload.name),
         comments: Set(payload.comments.unwrap_or_default()),
@@ -77,8 +72,19 @@ async fn create_engine(
         ..Default::default()
     };
 
+    let transaction = db
+        .begin()
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    if is_default {
+        clear_default_engines(&transaction).await?;
+    }
     let res = engine
-        .insert(&db)
+        .insert(&transaction)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    transaction
+        .commit()
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
     Ok(ApiResponse::ok(res).into_response())
@@ -147,8 +153,7 @@ async fn update_engine(
         .config_json
         .clone()
         .or_else(|| engine.config_json.clone().unwrap());
-    validate_storage_engine_config(&next_kind, next_config.as_deref())
-        .traced_and_response(|e| tracing::error!("{}", e))?;
+    validate_engine_config(&next_kind, next_config.as_deref())?;
 
     if let Some(kind) = payload.kind {
         engine.kind = Set(normalize_kind(kind));
@@ -167,17 +172,25 @@ async fn update_engine(
     }
 
     if let Some(is_default) = payload.is_default {
-        if is_default {
-            clear_default_engines(&db).await?;
-        }
         engine.is_default = Set(is_default);
     }
     if let Some(enabled) = payload.enabled {
         engine.enabled = Set(enabled);
     }
 
+    let transaction = db
+        .begin()
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    if next_is_default && !current_is_default {
+        clear_default_engines(&transaction).await?;
+    }
     let res = engine
-        .update(&db)
+        .update(&transaction)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    transaction
+        .commit()
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
     Ok(ApiResponse::ok(res).into_response())
@@ -208,7 +221,22 @@ async fn delete_engine(
     Ok(ApiResponse::ok(()).into_response())
 }
 
-async fn clear_default_engines(db: &DatabaseConnection) -> Result<(), Response> {
+#[allow(
+    clippy::result_large_err,
+    reason = "Axum handlers use Response as their established rejection type."
+)]
+fn validate_engine_config(kind: &str, config_json: Option<&str>) -> Result<(), Response> {
+    validate_storage_engine_config(kind, config_json).map_err(|error| {
+        tracing::warn!("Rejected invalid storage engine configuration: {error}");
+        ApiResponse::code_and_message(axum::http::StatusCode::BAD_REQUEST, error.to_string())
+            .into_response()
+    })
+}
+
+async fn clear_default_engines<C>(db: &C) -> Result<(), Response>
+where
+    C: ConnectionTrait,
+{
     let engines = storage_engine::Entity::find()
         .filter(storage_engine::Column::IsDefault.eq(true))
         .all(db)

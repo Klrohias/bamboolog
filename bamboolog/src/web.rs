@@ -61,6 +61,7 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
             .layer(Extension(config))
             .layer(Extension(database))
             .layer(Extension(jwt_service))
+            .layer(Extension(site_settings_service))
             .layer(Extension(theme_service))
             .layer(Extension(service_reloader)),
     )

@@ -1,19 +1,26 @@
-use std::{fs, io, path::PathBuf, sync::Arc};
+use std::{
+    fs, io,
+    path::{Component, Path, PathBuf},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use axum::http::header;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum_extra::response::FileStream;
-use minijinja::{Environment, Value};
+use minijinja::{AutoEscape, Environment, Value};
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map as JsonMap, Value as JsonValue, json};
 use tokio::fs::File;
 use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
 use tracing::instrument;
 
-use crate::config::{ApplicationConfiguration, ThemeManifest, config_entries};
+use crate::config::{
+    ApplicationConfiguration, ThemeConfigError, ThemeConfigField, ThemeManifest, config_entries,
+};
 use crate::service::reloadable::ReloadableService;
 use crate::service::site_settings::SiteSettingsService;
 use crate::utils::FailibleOperationExts;
@@ -21,6 +28,17 @@ use crate::utils::FailibleOperationExts;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThemeServiceSettings {
     pub current: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ThemeDetails {
+    pub id: String,
+    pub active: bool,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub author: Option<String>,
 }
 
 impl Default for ThemeServiceSettings {
@@ -33,8 +51,18 @@ impl Default for ThemeServiceSettings {
 
 #[derive(Debug)]
 struct LoadedTheme {
+    id: String,
     renderer_env: Environment<'static>,
     manifest: ThemeManifest,
+    config: JsonMap<String, JsonValue>,
+    translations: JsonMap<String, JsonValue>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ThemeConfiguration {
+    pub theme: ThemeDetails,
+    pub schema: Vec<ThemeConfigField>,
+    pub values: JsonMap<String, JsonValue>,
 }
 
 #[derive(Debug, Default)]
@@ -51,7 +79,15 @@ struct ThemeLoader<'a> {
 
 impl<'a> ThemeLoader<'a> {
     fn create_renderer() -> Environment<'static> {
-        Environment::new()
+        let mut environment = Environment::new();
+        environment.set_auto_escape_callback(|name| {
+            if name.ends_with(".html") || name.ends_with(".xml") {
+                AutoEscape::Html
+            } else {
+                AutoEscape::None
+            }
+        });
+        environment
     }
 
     fn load_templates(layouts_root: PathBuf, renderer_env: &mut Environment<'static>) {
@@ -104,8 +140,19 @@ impl<'a> ThemeLoader<'a> {
         let base_url = self.base_url.clone();
 
         renderer_env.add_filter("fromThemeStatic", move |value: String| -> Value {
-            Value::from_safe_string(format!("{}/static/theme/{}", base_url, value))
+            Value::from_safe_string(theme_static_url(&base_url, &value))
         });
+        let base_url = self.base_url.clone();
+        renderer_env.add_filter("theme_static", move |value: String| -> Value {
+            Value::from_safe_string(theme_static_url(&base_url, &value))
+        });
+        let base_url = self.base_url.clone();
+        renderer_env.add_filter("absolute_url", move |value: String| -> Value {
+            Value::from_safe_string(absolute_url(&base_url, &value))
+        });
+        renderer_env.add_filter("format_date", format_date);
+        renderer_env.add_filter("format_rfc2822", format_rfc2822);
+        renderer_env.add_filter("urlencode", url_encode);
     }
 
     pub fn get_manifest(&self) -> Result<ThemeManifest, ThemeError> {
@@ -116,7 +163,8 @@ impl<'a> ThemeLoader<'a> {
                 self.theme_service_settings.current.to_owned(),
             ));
         }
-        let manifest = toml::from_str(&fs::read_to_string(manifest_file)?)?;
+        let manifest: ThemeManifest = toml::from_str(&fs::read_to_string(manifest_file)?)?;
+        manifest.validate_config_schema()?;
 
         Ok(manifest)
     }
@@ -175,6 +223,108 @@ impl ThemeService {
         Ok(themes)
     }
 
+    pub async fn list_theme_details(&self) -> Result<Vec<ThemeDetails>, io::Error> {
+        let current = self.state.read().await.current_settings.current.clone();
+        let theme_root = self.dep_app_cfg.asset_dir.join("themes");
+        let mut themes = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(theme_root) {
+            for entry in entries.flatten() {
+                if !entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let Some(id) = entry.file_name().to_str().map(str::to_owned) else {
+                    continue;
+                };
+                let manifest_path = entry.path().join("manifest.toml");
+                let manifest = match fs::read_to_string(&manifest_path)
+                    .ok()
+                    .and_then(|contents| toml::from_str::<ThemeManifest>(&contents).ok())
+                {
+                    Some(manifest) => manifest,
+                    None => {
+                        tracing::warn!("Skipping theme with an invalid manifest: {}", id);
+                        continue;
+                    }
+                };
+                if let Err(error) = manifest.validate_config_schema() {
+                    tracing::warn!(
+                        "Skipping theme with an invalid configuration schema: {id}: {error}"
+                    );
+                    continue;
+                }
+
+                themes.push(ThemeDetails {
+                    active: id == current,
+                    id,
+                    name: manifest.name,
+                    version: manifest.version,
+                    description: manifest.description,
+                    homepage: manifest.homepage,
+                    author: manifest.author,
+                });
+            }
+        }
+        themes.sort_by(|left, right| left.id.cmp(&right.id));
+
+        Ok(themes)
+    }
+
+    pub async fn active_theme_configuration(&self) -> Result<ThemeConfiguration, ThemeError> {
+        let state = self.state.read().await;
+        let loaded_theme = state
+            .current_theme
+            .as_ref()
+            .ok_or_else(|| ThemeError::NoTheme(state.current_settings.current.clone()))?;
+
+        Ok(ThemeConfiguration {
+            theme: ThemeDetails {
+                id: loaded_theme.id.clone(),
+                active: true,
+                name: loaded_theme.manifest.name.clone(),
+                version: loaded_theme.manifest.version.clone(),
+                description: loaded_theme.manifest.description.clone(),
+                homepage: loaded_theme.manifest.homepage.clone(),
+                author: loaded_theme.manifest.author.clone(),
+            },
+            schema: loaded_theme.manifest.config.clone(),
+            values: loaded_theme.config.clone(),
+        })
+    }
+
+    pub async fn update_active_theme_config(
+        &self,
+        values: JsonMap<String, JsonValue>,
+    ) -> Result<ThemeConfiguration, ThemeError> {
+        let (id, manifest) = {
+            let state = self.state.read().await;
+            let loaded_theme = state
+                .current_theme
+                .as_ref()
+                .ok_or_else(|| ThemeError::NoTheme(state.current_settings.current.clone()))?;
+            (loaded_theme.id.clone(), loaded_theme.manifest.clone())
+        };
+        let values = manifest.resolve_config(&values, true)?;
+        write_theme_config_file(
+            &self.dep_app_cfg.asset_dir.join("themes").join(&id),
+            &values,
+        )?;
+
+        Ok(ThemeConfiguration {
+            theme: ThemeDetails {
+                id,
+                active: true,
+                name: manifest.name.clone(),
+                version: manifest.version.clone(),
+                description: manifest.description.clone(),
+                homepage: manifest.homepage.clone(),
+                author: manifest.author.clone(),
+            },
+            schema: manifest.config,
+            values,
+        })
+    }
+
     pub async fn render(
         &self,
         name: impl AsRef<str>,
@@ -188,6 +338,28 @@ impl ThemeService {
 
         let mapped_file = loaded_theme.manifest.map_layout_file(name.as_ref());
         let template = loaded_theme.renderer_env.get_template(&mapped_file)?;
+
+        let mut ctx = serde_json::to_value(ctx)?;
+        let context = ctx
+            .as_object_mut()
+            .ok_or(ThemeError::InvalidRenderContext)?;
+        context.insert(
+            "theme".to_string(),
+            json!({
+                "id": loaded_theme.id,
+                "config": loaded_theme.config,
+            }),
+        );
+        let language = context
+            .get("site")
+            .and_then(JsonValue::as_object)
+            .and_then(|site| site.get("language"))
+            .and_then(JsonValue::as_str)
+            .unwrap_or("en");
+        context.insert(
+            "i18n".to_string(),
+            select_translation(&loaded_theme.translations, language),
+        );
 
         Ok(template.render(ctx)?)
     }
@@ -208,6 +380,18 @@ impl ThemeService {
 
         let content_type = mime_guess::from_path(&path).first_or_octet_stream();
 
+        let path = Path::new(&path);
+        if path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+        {
+            return Err(ThemeError::NotFound);
+        }
+
         let file = File::open(static_root.join(path))
             .await
             .traced(|e| tracing::error!("{}", e))
@@ -220,6 +404,112 @@ impl ThemeService {
         )
             .into_response())
     }
+}
+
+fn theme_static_url(base_url: &str, path: &str) -> String {
+    format!(
+        "{}/static/theme/{}",
+        base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
+}
+
+fn absolute_url(base_url: &str, value: &str) -> String {
+    if value.starts_with("http://") || value.starts_with("https://") || value.starts_with("//") {
+        return value.to_string();
+    }
+
+    format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        value.trim_start_matches('/')
+    )
+}
+
+fn format_date(value: String, format: Option<String>) -> String {
+    let format = format.as_deref().unwrap_or("%Y-%m-%d");
+    chrono::DateTime::parse_from_rfc3339(&value)
+        .map(|date| date.format(format).to_string())
+        .unwrap_or(value)
+}
+
+fn format_rfc2822(value: String) -> String {
+    chrono::DateTime::parse_from_rfc3339(&value)
+        .map(|date| date.to_rfc2822())
+        .unwrap_or(value)
+}
+
+fn url_encode(value: String) -> String {
+    value
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                vec![byte as char]
+            }
+            _ => format!("%{byte:02X}").chars().collect(),
+        })
+        .collect()
+}
+
+fn read_theme_config_file(theme_root: &Path) -> Result<JsonMap<String, JsonValue>, ThemeError> {
+    let path = theme_root.join("config.json");
+    if !path.exists() {
+        return Ok(JsonMap::new());
+    }
+    Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+}
+
+fn read_theme_translations(theme_root: &Path) -> JsonMap<String, JsonValue> {
+    let mut translations = JsonMap::new();
+    let directory = theme_root.join("i18n");
+    let Ok(entries) = fs::read_dir(directory) else {
+        return translations;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(language) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let Ok(contents) = fs::read_to_string(&path) else {
+            tracing::warn!(?path, "Cannot read theme translation file");
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<JsonValue>(&contents) else {
+            tracing::warn!(?path, "Cannot parse theme translation file");
+            continue;
+        };
+        if value.is_object() {
+            translations.insert(language.to_string(), value);
+        }
+    }
+
+    translations
+}
+
+fn select_translation(translations: &JsonMap<String, JsonValue>, language: &str) -> JsonValue {
+    let language = language.replace('_', "-").to_ascii_lowercase();
+    let primary_language = language.split('-').next().unwrap_or(&language);
+    translations
+        .get(&language)
+        .or_else(|| translations.get(primary_language))
+        .or_else(|| translations.get("en"))
+        .cloned()
+        .unwrap_or_else(|| JsonValue::Object(JsonMap::new()))
+}
+
+fn write_theme_config_file(
+    theme_root: &Path,
+    values: &JsonMap<String, JsonValue>,
+) -> Result<(), ThemeError> {
+    let path = theme_root.join("config.json");
+    let temporary_path = theme_root.join("config.json.tmp");
+    fs::write(&temporary_path, serde_json::to_string_pretty(values)?)?;
+    fs::rename(temporary_path, path)?;
+    Ok(())
 }
 
 #[async_trait]
@@ -255,6 +545,26 @@ impl ReloadableService for ThemeService {
             }
             Ok(v) => v,
         };
+        let theme_root = self
+            .dep_app_cfg
+            .asset_dir
+            .join("themes")
+            .join(&settings.current);
+        let stored_config = match read_theme_config_file(&theme_root) {
+            Ok(values) => values,
+            Err(error) => {
+                tracing::error!("Failed to load theme configuration: {error}");
+                return;
+            }
+        };
+        let config = match manifest.resolve_config(&stored_config, false) {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::error!("Failed to validate theme configuration: {error}");
+                return;
+            }
+        };
+        let translations = read_theme_translations(&theme_root);
         let renderer_env = match loader.get_renderer_env() {
             Err(e) => {
                 tracing::error!("Failed to load theme renderer: {e}");
@@ -266,8 +576,11 @@ impl ReloadableService for ThemeService {
         {
             let mut state = self.state.write().await;
             let loaded_theme = LoadedTheme {
+                id: settings.current.clone(),
                 manifest,
                 renderer_env,
+                config,
+                translations,
             };
             state.current_settings = settings;
             state.current_theme = Some(loaded_theme);
@@ -294,4 +607,322 @@ pub enum ThemeError {
 
     #[error(transparent)]
     TomlError(#[from] toml::de::Error),
+
+    #[error(transparent)]
+    JsonError(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    ThemeConfigError(#[from] ThemeConfigError),
+
+    #[error("Theme render contexts must be JSON objects")]
+    InvalidRenderContext,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, sync::Arc};
+
+    use sea_orm::Database;
+    use serde_json::json;
+
+    use crate::config::ApplicationConfiguration;
+    use crate::service::site_settings::SiteSettingsService;
+
+    use super::{
+        ThemeLoader, ThemeManifest, ThemeService, ThemeServiceSettings, absolute_url, format_date,
+        format_rfc2822, read_theme_config_file, read_theme_translations, select_translation,
+        theme_static_url, url_encode, write_theme_config_file,
+    };
+
+    #[test]
+    fn builds_static_urls_without_duplicate_slashes() {
+        assert_eq!(
+            theme_static_url("https://example.test/", "/css/journal.css"),
+            "https://example.test/static/theme/css/journal.css"
+        );
+    }
+
+    #[test]
+    fn resolves_relative_urls_without_rewriting_external_urls() {
+        assert_eq!(
+            absolute_url("https://example.test/", "/posts/first"),
+            "https://example.test/posts/first"
+        );
+        assert_eq!(
+            absolute_url("https://example.test/", "https://cdn.example/image.png"),
+            "https://cdn.example/image.png"
+        );
+    }
+
+    #[test]
+    fn formats_rfc3339_dates_and_preserves_unknown_values() {
+        assert_eq!(
+            format_date(
+                "2026-07-25T10:20:30+00:00".to_string(),
+                Some("%Y".to_string())
+            ),
+            "2026"
+        );
+        assert_eq!(format_date("not-a-date".to_string(), None), "not-a-date");
+        assert_eq!(
+            format_rfc2822("2026-07-25T10:20:30+00:00".to_string()),
+            "Sat, 25 Jul 2026 10:20:30 +0000"
+        );
+    }
+
+    #[test]
+    fn url_encodes_unicode_and_reserved_characters() {
+        assert_eq!(
+            url_encode("Rust & 中文".to_string()),
+            "Rust%20%26%20%E4%B8%AD%E6%96%87"
+        );
+    }
+
+    #[test]
+    fn journal_theme_renders_the_public_page_contract() {
+        let asset_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("debug.private.d");
+        let config = Arc::new(ApplicationConfiguration {
+            listen_addr: "127.0.0.1:0".to_string(),
+            database: "sqlite::memory:".to_string(),
+            raw_asset_dir: asset_dir.to_string_lossy().to_string(),
+            asset_dir,
+        });
+        let settings = ThemeServiceSettings {
+            current: "journal".to_string(),
+        };
+        let loader = ThemeLoader::new(&config, &settings, "https://example.test/".to_string());
+        let environment = loader.get_renderer_env().unwrap();
+        let i18n = json!({
+            "archives": "Archives", "tags": "Tags", "categories": "Categories", "rss_feed": "RSS Feed",
+            "no_posts": "No posts published yet.", "no_matching_posts": "No matching posts.", "no_terms": "No terms yet.",
+            "last_updated": "Last updated", "newer_post": "Newer post", "older_post": "Older post",
+            "no_newer_posts": "No newer posts", "no_older_posts": "No older posts", "not_found": "Not found",
+            "not_found_message": "The requested post does not exist.", "return_to_posts": "Return to all posts", "toc_title": "Table of Contents",
+            "comments_disabled": "Comments Disabled.", "comments_activate_js": "Please activate JavaScript to view comments."
+        });
+        let mut context = json!({
+            "site": { "name": "Example", "home_url": "/", "language": "zh-CN", "favicon_url": "/favicon.svg", "manifest_url": "/site.webmanifest", "search": { "google_cse_id": "search-id" }, "analytics": { "google_analytics_id": "G-123", "clarity_project_id": "clarity-id", "cloudflare_beacon_token": "cf-token" }, "head_html": "<meta name=\"verification\" content=\"token\">" },
+            "page": { "kind": "home", "title": "Example", "url": "/" },
+            "theme": { "id": "journal", "config": { "subtitle": "A journal", "show_reading_time": true, "show_dark_mode_toggle": true, "show_theme_attribution": true } },
+            "posts": [{
+                "title": "First post",
+                "url": "/posts/first-post",
+                "summary": "A summary",
+                "created_at": "2026-07-25T10:20:30+00:00",
+                "reading_minutes": 1
+            }],
+            "pagination": {
+                "total_pages": 1,
+                "page": 1,
+                "has_previous": false,
+                "has_next": false,
+                "previous_url": "/?page=0",
+                "next_url": "/?page=2"
+            }
+        });
+        context["i18n"] = i18n.clone();
+
+        let rendered = environment
+            .get_template("home.html")
+            .unwrap()
+            .render(context)
+            .unwrap();
+
+        assert!(rendered.contains("First post"));
+        assert!(rendered.contains("https://example.test/static/theme/css/journal.css"));
+        assert!(rendered.contains("2026-07-25"));
+        assert!(rendered.contains("A journal"));
+        assert!(rendered.contains("schedule"));
+        assert!(rendered.contains("cse.google.com/cse.js?cx=search-id"));
+        assert!(rendered.contains("googletagmanager.com/gtag/js?id=G-123"));
+        assert!(rendered.contains("clarity.ms/tag/"));
+        assert!(rendered.contains("static.cloudflareinsights.com/beacon.min.js"));
+        assert!(rendered.contains("name=\"verification\" content=\"token\""));
+
+        let mut post_context = json!({
+            "site": { "name": "Example", "home_url": "/", "language": "zh-CN", "favicon_url": "/favicon.svg", "manifest_url": "/site.webmanifest", "search": { "google_cse_id": "" }, "analytics": { "google_analytics_id": "", "clarity_project_id": "", "cloudflare_beacon_token": "" }, "head_html": "" },
+            "page": { "kind": "post", "title": "First post", "illustration": "/attachments/cover", "toc_enabled": true, "math_enabled": true, "url": "/posts/first-post" },
+            "theme": { "id": "journal", "config": { "subtitle": "A journal", "show_reading_time": true, "show_dark_mode_toggle": true, "show_theme_attribution": true } },
+            "post": {
+                "title": "First post",
+                "created_at": "2026-07-25T10:20:30+00:00",
+                "updated_at": "2026-07-25T10:20:30+00:00",
+                "reading_minutes": 1,
+                "description": "A description",
+                "illustration": "/attachments/cover",
+                "tags": ["Rust"],
+                "categories": ["Engineering"]
+            },
+            "content": "<p>Rendered content</p>",
+            "comments": {
+                "enabled": true,
+                "disabled_for_post": false,
+                "provider": "giscus",
+                "config": {
+                    "repo": "example/blog",
+                    "repo_id": "repo-id",
+                    "category": "General",
+                    "category_id": "category-id"
+                }
+            }
+        });
+        post_context["i18n"] = i18n.clone();
+        let post_rendered = environment
+            .get_template("post.html")
+            .unwrap()
+            .render(post_context)
+            .unwrap();
+        let feed_rendered = environment
+            .get_template("feed.xml")
+            .unwrap()
+            .render(json!({
+                "site": { "name": "Example", "description": "Example feed", "language": "en", "copyright": "Example" },
+                "posts": [{ "title": "First post", "url": "/posts/first-post", "created_at": "2026-07-25T10:20:30+00:00", "summary": "A summary" }]
+            }))
+            .unwrap();
+        let not_found_rendered = environment
+            .get_template("not-found.html")
+            .unwrap()
+            .render(json!({
+                "site": { "name": "Example", "home_url": "/", "search": { "google_cse_id": "" }, "analytics": { "google_analytics_id": "", "clarity_project_id": "", "cloudflare_beacon_token": "" }, "head_html": "" },
+                "page": { "kind": "not-found", "title": "Not found", "url": "" },
+                "theme": { "id": "journal", "config": { "subtitle": "A journal", "show_reading_time": true, "show_dark_mode_toggle": true, "show_theme_attribution": true } },
+                "i18n": i18n
+            }))
+            .unwrap();
+
+        assert!(post_rendered.contains("<p>Rendered content</p>"));
+        assert!(post_rendered.contains("A description"));
+        assert!(post_rendered.contains("post-head-wrapper"));
+        assert!(post_rendered.contains("background-image: url("));
+        assert!(post_rendered.contains("attachments"));
+        assert!(post_rendered.contains("Engineering"));
+        assert!(post_rendered.contains("/categories/Engineering"));
+        assert!(post_rendered.contains("katex.min.css"));
+        assert!(post_rendered.contains("lang=\"zh-CN\""));
+        assert!(post_rendered.contains("rel=\"icon\""));
+        assert!(post_rendered.contains("favicon.svg"));
+        assert!(post_rendered.contains("rel=\"manifest\""));
+        assert!(post_rendered.contains("site.webmanifest"));
+        assert!(post_rendered.contains("https://example.test/posts/first-post"));
+        assert!(post_rendered.contains("property=\"og:image\""));
+        assert!(post_rendered.contains("giscus.app/client.js"));
+        assert!(post_rendered.contains("data-repo=\"example"));
+        assert!(post_rendered.contains("attachments"));
+        assert!(feed_rendered.contains("xmlns:atom"));
+        assert!(feed_rendered.contains("rel=\"self\""));
+        assert!(feed_rendered.contains("xml-stylesheet href=\"https://example.test/static/theme/rss.xsl\""));
+        assert!(feed_rendered.contains("Sat, 25 Jul 2026 10:20:30 +0000"));
+        assert!(not_found_rendered.contains("The requested post does not exist."));
+    }
+
+    #[test]
+    fn html_templates_escape_untrusted_context_values() {
+        let mut environment = ThemeLoader::create_renderer();
+        environment
+            .add_template("test.html", "{{ title }}")
+            .unwrap();
+
+        assert_eq!(
+            environment
+                .get_template("test.html")
+                .unwrap()
+                .render(json!({ "title": "<script>" }))
+                .unwrap(),
+            "&lt;script&gt;"
+        );
+    }
+
+    #[test]
+    fn xml_templates_escape_untrusted_context_values() {
+        let mut environment = ThemeLoader::create_renderer();
+        environment
+            .add_template("test.xml", "<title>{{ title }}</title>")
+            .unwrap();
+
+        assert_eq!(
+            environment
+                .get_template("test.xml")
+                .unwrap()
+                .render(json!({ "title": "<script>" }))
+                .unwrap(),
+            "<title>&lt;script&gt;</title>"
+        );
+    }
+
+    #[test]
+    fn writes_and_reads_theme_config_json() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let values = serde_json::from_value(json!({
+            "subtitle": "Personal notes",
+            "show_reading_time": false,
+            "posts_per_page": 12
+        }))
+        .unwrap();
+
+        write_theme_config_file(temporary_directory.path(), &values).unwrap();
+
+        assert_eq!(
+            read_theme_config_file(temporary_directory.path()).unwrap(),
+            values
+        );
+        assert!(temporary_directory.path().join("config.json").is_file());
+    }
+
+    #[test]
+    fn journal_manifest_resolves_its_config_json() {
+        let theme_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("debug.private.d/themes/journal");
+        let manifest: ThemeManifest =
+            toml::from_str(&std::fs::read_to_string(theme_root.join("manifest.toml")).unwrap())
+                .unwrap();
+        let values = read_theme_config_file(&theme_root).unwrap();
+        let resolved = manifest.resolve_config(&values, false).unwrap();
+
+        assert_eq!(resolved["subtitle"], "Moments piled up.");
+        assert_eq!(resolved["show_reading_time"], true);
+        let translations = read_theme_translations(&theme_root);
+        assert_eq!(select_translation(&translations, "zh-CN")["archives"], "归档");
+        assert_eq!(
+            select_translation(&translations, "pt-BR")["archives"],
+            "Arquivo"
+        );
+        assert_eq!(
+            select_translation(&translations, "zh_Hant")["archives"],
+            "封存"
+        );
+        assert_eq!(select_translation(&translations, "unknown")["archives"], "Archives");
+    }
+
+    #[tokio::test]
+    async fn lists_manifest_details_and_marks_the_active_theme() {
+        let asset_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("debug.private.d");
+        let config = Arc::new(ApplicationConfiguration {
+            listen_addr: "127.0.0.1:0".to_string(),
+            database: "sqlite::memory:".to_string(),
+            raw_asset_dir: asset_dir.to_string_lossy().to_string(),
+            asset_dir,
+        });
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        let service =
+            ThemeService::new(database.clone(), config, SiteSettingsService::new(database));
+        service.state.write().await.current_settings = ThemeServiceSettings {
+            current: "journal".to_string(),
+        };
+
+        let themes = service.list_theme_details().await.unwrap();
+        let journal = themes.iter().find(|theme| theme.id == "journal").unwrap();
+
+        assert!(journal.active);
+        assert_eq!(journal.name.as_deref(), Some("Journal"));
+        assert_eq!(journal.version.as_deref(), Some("0.1.0"));
+    }
 }

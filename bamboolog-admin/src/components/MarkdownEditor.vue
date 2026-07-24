@@ -1,29 +1,28 @@
 <template>
-  <n-input
-    v-model:value="content"
-    type="textarea"
-    :placeholder="$t('posts.content')"
-    :autosize="{ minRows: 20 }"
-  />
+  <MilkdownProvider>
+    <MilkdownContent
+      :model-value="modelValue"
+      :storage-engine-id="storageEngineId"
+      @update:model-value="emit('update:modelValue', $event)"
+      @upload-error="emit('uploadError')"
+    />
+  </MilkdownProvider>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { NInput } from 'naive-ui'
+import { defineAsyncComponent } from 'vue'
+import { MilkdownProvider } from '@milkdown/vue'
 
-const props = defineProps<{
+const MilkdownContent = defineAsyncComponent(() => import('./MilkdownContent.vue'))
+
+defineProps<{
   modelValue: string
+  storageEngineId?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
+  (e: 'uploadError'): void
 }>()
 
-const content = computed({
-  get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value)
-})
 </script>
-
-<style scoped>
-</style>

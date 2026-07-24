@@ -77,10 +77,20 @@ async fn upload_attachment(
             })? {
                 file.extend_from_slice(&chunk);
             }
-        } else if name == "storage_engine_id"
-            && let Ok(text) = field.text().await
-        {
-            storage_engine_id = text.parse::<i32>().ok();
+        } else if name == "storage_engine_id" {
+            let text = field.text().await.map_err(|e| {
+                ApiResponse::code_and_message(StatusCode::BAD_REQUEST, e.to_string())
+                    .into_response()
+            })?;
+            storage_engine_id = Some(text.parse::<i32>().ok().filter(|id| *id > 0).ok_or_else(
+                || {
+                    ApiResponse::code_and_message(
+                        StatusCode::BAD_REQUEST,
+                        "storage_engine_id must be a positive integer",
+                    )
+                    .into_response()
+                },
+            )?);
         }
     }
 

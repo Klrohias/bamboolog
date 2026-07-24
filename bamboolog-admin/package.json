@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@milkdown/crepe": "^7.21.3",
+    "@milkdown/vue": "7.21.3",
     "@vicons/ionicons5": "^0.13.0",
     "axios": "^1.5.0",
     "naive-ui": "^2.33.4",
