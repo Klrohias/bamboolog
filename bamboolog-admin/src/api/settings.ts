@@ -1,13 +1,5 @@
 import api, { type ApiResponse } from './index'
 
-export type NavigationTarget = 'custom' | 'archives' | 'categories' | 'tags' | 'feed'
-
-export interface NavigationItem {
-    label: string
-    url: string
-    target: NavigationTarget
-}
-
 export interface SiteSettings {
     site_name: string
     base_url: string
@@ -15,7 +7,6 @@ export interface SiteSettings {
     description: string
     language: string
     favicon_url: string
-    navigation: NavigationItem[]
     rss_enabled: boolean
     sitemap_enabled: boolean
     posts_per_page: number
@@ -35,7 +26,7 @@ export interface ThemeDetails {
     author: string | null
 }
 
-export type ThemeConfigValue = string | number | boolean
+export type ThemeConfigValue = string | number | boolean | null | ThemeConfigValue[] | { [key: string]: ThemeConfigValue }
 
 export interface ThemeConfigOption {
     label: string
@@ -46,7 +37,7 @@ export interface ThemeConfigField {
     key: string
     label: string
     description: string | null
-    type: 'string' | 'boolean' | 'integer' | 'number' | 'select'
+    type: 'string' | 'boolean' | 'integer' | 'number' | 'select' | 'json'
     required: boolean
     options: ThemeConfigOption[]
     min: number | null

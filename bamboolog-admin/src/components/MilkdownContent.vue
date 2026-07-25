@@ -1,5 +1,5 @@
 <template>
-  <div class="milkdown-editor">
+  <div class="milkdown-editor" :class="{ 'milkdown-editor--dark': settingsStore.theme === 'dark' }">
     <Milkdown />
   </div>
 </template>
@@ -10,6 +10,7 @@ import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
 import { Milkdown, useEditor } from '@milkdown/vue'
 import { attachmentApi } from '@/api/attachments'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{
   modelValue: string
@@ -20,6 +21,8 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   (e: 'uploadError'): void
 }>()
+
+const settingsStore = useSettingsStore()
 
 async function uploadImage(file: File): Promise<string> {
   try {
@@ -65,7 +68,6 @@ useEditor((root) => {
   max-width: 100%;
   min-height: 480px;
   overflow-x: clip;
-  border: 1px solid var(--n-border-color);
   background: var(--n-color);
 }
 
@@ -84,6 +86,26 @@ useEditor((root) => {
 
 .milkdown-editor :deep(.milkdown-top-bar) {
   max-width: 100%;
+}
+
+.milkdown-editor--dark :deep(.milkdown) {
+  --crepe-color-background: #1a1a1a;
+  --crepe-color-on-background: #e6e6e6;
+  --crepe-color-surface: #121212;
+  --crepe-color-surface-low: #1c1c1c;
+  --crepe-color-on-surface: #d1d1d1;
+  --crepe-color-on-surface-variant: #a9a9a9;
+  --crepe-color-outline: #757575;
+  --crepe-color-primary: #b5b5b5;
+  --crepe-color-secondary: #4d4d4d;
+  --crepe-color-on-secondary: #d6d6d6;
+  --crepe-color-inverse: #e5e5e5;
+  --crepe-color-on-inverse: #2a2a2a;
+  --crepe-color-inline-code: #ff6666;
+  --crepe-color-error: #ff6666;
+  --crepe-color-hover: #232323;
+  --crepe-color-selected: #2f2f2f;
+  --crepe-color-inline-area: #2b2b2b;
 }
 
 @media (max-width: 640px) {

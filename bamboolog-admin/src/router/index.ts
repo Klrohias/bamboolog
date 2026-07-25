@@ -14,8 +14,8 @@ const routes = [
     children: [
       { path: '', redirect: '/posts' },
       { path: 'posts', component: PostsView, name: 'Posts' },
-      { path: 'posts/new', component: PostEditor, name: 'New Post' },
-      { path: 'posts/edit/:id', component: PostEditor, name: 'Edit Post' },
+      { path: 'posts/new', component: PostEditor, name: 'New Post', meta: { immersive: true } },
+      { path: 'posts/edit/:id', component: PostEditor, name: 'Edit Post', meta: { immersive: true } },
       { path: 'settings', component: SettingsView, name: 'Settings' },
       { path: 'themes', component: () => import('@/views/ThemesView.vue'), name: 'Themes' },
       { path: 'theme-settings', component: () => import('@/views/ThemeConfigView.vue'), name: 'Theme Configuration' },

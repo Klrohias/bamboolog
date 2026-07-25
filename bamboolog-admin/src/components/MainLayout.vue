@@ -1,23 +1,37 @@
 <template>
-  <n-layout has-sider position="absolute" style="height: 100vh">
-    <n-layout-sider bordered collapse-mode="width" :collapsed-width="64" :width="240"
+  <n-layout has-sider position="absolute" class="app-layout">
+    <n-layout-sider class="desktop-sider" bordered collapse-mode="transform" :collapsed-width="0" :width="240"
       :collapsed="settingsStore.collapsed" show-trigger @collapse="settingsStore.collapsed = true"
-      @expand="settingsStore.collapsed = false">
+      collapsed-trigger-style="right: -20px;" @expand="settingsStore.collapsed = false">
       <div class="logo">
         <span v-if="!settingsStore.collapsed">Bamboolog Admin</span>
         <span v-else>B</span>
       </div>
-      <n-menu :collapsed="settingsStore.collapsed" :collapsed-width="64" :collapsed-icon-size="22"
-        :options="menuOptions" v-model:value="activeKey" />
+      <n-menu :collapsed="settingsStore.collapsed" :collapsed-width="0" :collapsed-icon-size="22" :options="menuOptions"
+        v-model:value="activeKey" />
     </n-layout-sider>
     <n-layout>
-      <n-layout-header bordered
-        style="padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between">
-        <n-breadcrumb>
-          <n-breadcrumb-item>{{ $t('common.admin') }}</n-breadcrumb-item>
-          <n-breadcrumb-item>{{ currentRouteLabel }}</n-breadcrumb-item>
-        </n-breadcrumb>
-        <n-space align="center">
+      <n-layout-header class="app-header" bordered>
+        <div class="header-leading">
+          <n-popover v-model:show="mobileMenuVisible" trigger="click" placement="bottom-start" :show-arrow="false" :width="240">
+            <template #trigger>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-button class="mobile-menu-trigger" quaternary circle :aria-label="$t('common.menu')">
+                    <template #icon><n-icon><menu-outline /></n-icon></template>
+                  </n-button>
+                </template>
+                {{ $t('common.menu') }}
+              </n-tooltip>
+            </template>
+            <n-menu :value="activeKey" :options="menuOptions" @update:value="handleMobileMenuSelect" />
+          </n-popover>
+          <n-breadcrumb>
+            <n-breadcrumb-item>{{ $t('common.admin') }}</n-breadcrumb-item>
+            <n-breadcrumb-item>{{ currentRouteLabel }}</n-breadcrumb-item>
+          </n-breadcrumb>
+        </div>
+        <n-space class="header-actions" align="center">
           <n-button quaternary circle @click="settingsStore.toggleTheme">
             <template #icon>
               <n-icon v-if="settingsStore.theme === 'dark'"><sunny-outline /></n-icon>
@@ -36,12 +50,12 @@
               <template #icon>
                 <n-icon><person-outline /></n-icon>
               </template>
-              {{ userStore.user?.nickname || userStore.user?.username || 'User' }}
+              <span class="user-name">{{ userStore.user?.nickname || userStore.user?.username || 'User' }}</span>
             </n-button>
           </n-dropdown>
         </n-space>
       </n-layout-header>
-      <n-layout-content content-style="padding: 24px;">
+      <n-layout-content :class="['app-content', { 'app-content--immersive': route.meta.immersive === true }]">
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -64,7 +78,8 @@ import {
   ImageOutline,
   CloudOutline,
   ColorPaletteOutline,
-  OptionsOutline
+  OptionsOutline,
+  MenuOutline
 } from '@vicons/ionicons5'
 import { setAuthToken } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
@@ -76,6 +91,7 @@ const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
 const activeKey = ref<string | null>(null)
+const mobileMenuVisible = ref(false)
 
 function renderIcon(icon: any) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -83,34 +99,55 @@ function renderIcon(icon: any) {
 
 const menuOptions = computed<MenuOption[]>(() => [
   {
-    label: () => h(RouterLink, { to: '/posts' }, { default: () => t('common.posts') }),
-    key: 'posts',
-    icon: renderIcon(BookOutline)
+    type: 'group',
+    label: () => t('common.content'),
+    key: 'content',
+    children: [
+      {
+        label: () => h(RouterLink, { to: '/posts' }, { default: () => t('common.posts') }),
+        key: 'posts',
+        icon: renderIcon(BookOutline)
+      },
+      {
+        label: () => h(RouterLink, { to: '/attachments' }, { default: () => t('common.attachments') }),
+        key: 'attachments',
+        icon: renderIcon(ImageOutline)
+      }
+    ]
   },
   {
-    label: () => h(RouterLink, { to: '/settings' }, { default: () => t('common.settings') }),
-    key: 'settings',
-    icon: renderIcon(SettingsOutline)
+    type: 'group',
+    label: () => t('common.theme'),
+    key: 'theme',
+    children: [
+      {
+        label: () => h(RouterLink, { to: '/themes' }, { default: () => t('common.themes') }),
+        key: 'themes',
+        icon: renderIcon(ColorPaletteOutline)
+      },
+      {
+        label: () => h(RouterLink, { to: '/theme-settings' }, { default: () => t('common.theme_config') }),
+        key: 'theme-settings',
+        icon: renderIcon(OptionsOutline)
+      }
+    ]
   },
   {
-    label: () => h(RouterLink, { to: '/themes' }, { default: () => t('common.themes') }),
-    key: 'themes',
-    icon: renderIcon(ColorPaletteOutline)
-  },
-  {
-    label: () => h(RouterLink, { to: '/theme-settings' }, { default: () => t('common.theme_config') }),
-    key: 'theme-settings',
-    icon: renderIcon(OptionsOutline)
-  },
-  {
-    label: () => h(RouterLink, { to: '/attachments' }, { default: () => t('common.attachments') }),
-    key: 'attachments',
-    icon: renderIcon(ImageOutline)
-  },
-  {
-    label: () => h(RouterLink, { to: '/storage-engines' }, { default: () => t('common.storage_engine') }),
-    key: 'storage-engines',
-    icon: renderIcon(CloudOutline)
+    type: 'group',
+    label: () => t('common.system'),
+    key: 'system',
+    children: [
+      {
+        label: () => h(RouterLink, { to: '/settings' }, { default: () => t('common.site_settings') }),
+        key: 'settings',
+        icon: renderIcon(SettingsOutline)
+      },
+      {
+        label: () => h(RouterLink, { to: '/storage-engines' }, { default: () => t('common.storage_engine') }),
+        key: 'storage-engines',
+        icon: renderIcon(CloudOutline)
+      }
+    ]
   }
 ])
 
@@ -134,11 +171,11 @@ const userOptions = computed(() => [
 
 const currentRouteLabel = computed(() => {
   if (activeKey.value === 'posts') return t('common.posts')
-  if (activeKey.value === 'settings') return t('common.settings')
+  if (activeKey.value === 'settings') return t('common.site_settings')
   if (activeKey.value === 'themes') return t('common.themes')
   if (activeKey.value === 'theme-settings') return t('common.theme_config')
   if (activeKey.value === 'attachments') return t('common.attachments')
-  if (activeKey.value === 'storage-engines') return 'Storage'
+  if (activeKey.value === 'storage-engines') return t('common.storage_engine')
   return t('common.dashboard')
 })
 
@@ -161,6 +198,11 @@ function handleLanguageSelect(key: 'zh-CN' | 'en-US') {
   locale.value = key
 }
 
+function handleMobileMenuSelect(key: string | number) {
+  activeKey.value = String(key)
+  mobileMenuVisible.value = false
+}
+
 function handleUserSelect(key: string) {
   if (key === 'profile') {
     router.push('/profile')
@@ -177,6 +219,38 @@ function handleLogout() {
 </script>
 
 <style scoped>
+.app-layout {
+  height: 100vh;
+}
+
+.app-header {
+  height: 64px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-leading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-menu-trigger {
+  display: none;
+}
+
+.app-content {
+  padding-inline: 40px;
+  padding-block: 30px;
+}
+
+.app-content.app-content--immersive {
+  padding: 0;
+}
+
 .logo {
   height: 64px;
   display: flex;
@@ -186,5 +260,27 @@ function handleLogout() {
   font-weight: bold;
   overflow: hidden;
   white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .desktop-sider {
+    display: none;
+  }
+
+  .app-header {
+    padding-inline: 16px;
+  }
+
+  .mobile-menu-trigger {
+    display: inline-flex;
+  }
+
+  .app-content {
+    padding-inline: 16px;
+  }
+
+  .user-name {
+    display: none;
+  }
 }
 </style>

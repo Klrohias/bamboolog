@@ -81,7 +81,7 @@ async fn display_archives(
             .render(
                 LAYOUT_ARCHIVE,
                 json!({
-                    "site": site_context(&site, "/archives"),
+                    "site": site_context(&site),
                     "page": { "kind": "archives", "title": "Archives", "description": "Archives", "url": "/archives" },
                     "years": years.into_iter().rev().map(|(year, posts)| json!({ "year": year, "posts": posts })).collect::<Vec<_>>(),
                     "pagination": pagination_context(pagination, total, "/archives"),
@@ -201,7 +201,7 @@ async fn display_taxonomy(
                 .render(
                     LAYOUT_TAXONOMY,
                     json!({
-                        "site": site_context(&site, &format!("/{field}")),
+                        "site": site_context(&site),
                         "page": { "kind": field, "title": format!("{title}: {selected}"), "description": format!("{title}: {selected}"), "url": path },
                         "taxonomy": { "kind": field, "name": title, "term": selected },
                         "posts": posts,
@@ -224,7 +224,7 @@ async fn display_taxonomy(
             .render(
                 LAYOUT_TERMS,
                 json!({
-                    "site": site_context(&site, &format!("/{field}")),
+                    "site": site_context(&site),
                     "page": { "kind": field, "title": title, "description": title, "url": format!("/{field}") },
                     "taxonomy": { "kind": field, "name": title, "path": format!("/{field}"), "terms": counts.into_iter().map(|(name, count)| json!({ "name": name, "count": count })).collect::<Vec<_>>() },
                 }),
@@ -250,7 +250,7 @@ async fn display_home(
             .render(
                 LAYOUT_HOME,
                 json!({
-                    "site": site_context(&site, "/"),
+                    "site": site_context(&site),
                     "page": { "kind": "home", "title": site.site_name, "description": site.description, "url": "/" },
                     "posts": posts.iter().map(post_summary).collect::<Vec<_>>(),
                     "pagination": pagination_context(pagination, total, "/"),
@@ -288,7 +288,7 @@ async fn display_post(
                 .render(
                     LAYOUT_NOT_FOUND,
                     json!({
-                        "site": site_context(&site, ""),
+                        "site": site_context(&site),
                         "page": { "kind": "not-found", "title": "Not found", "description": "The requested post does not exist.", "url": "" },
                     }),
                 )
@@ -305,7 +305,7 @@ async fn display_post(
             .render(
                 LAYOUT_NOT_FOUND,
                 json!({
-                    "site": site_context(&site, ""),
+                    "site": site_context(&site),
                     "page": { "kind": "not-found", "title": "Not found", "description": "The requested post does not exist.", "url": "" },
                 }),
             )
@@ -340,7 +340,7 @@ async fn display_post(
             .render(
                 LAYOUT_POST,
                 json!({
-                    "site": site_context(&site, &post_url(&post)),
+                    "site": site_context(&site),
                     "page": { "kind": "post", "title": post.title, "description": post.description.clone().unwrap_or_else(|| excerpt(&post.content, 240)), "illustration": post.illustration.clone(), "url": post_url(&post) },
                     "content": rendered_content,
                     "post": post_detail(&post),
@@ -353,7 +353,7 @@ async fn display_post(
     ))
 }
 
-fn site_context(site: &SiteSettings, current_url: &str) -> Value {
+fn site_context(site: &SiteSettings) -> Value {
     json!({
         "name": site.site_name,
         "base_url": site.base_url.trim_end_matches('/'),
@@ -362,16 +362,6 @@ fn site_context(site: &SiteSettings, current_url: &str) -> Value {
         "language": if site.language.trim().is_empty() { "en" } else { site.language.as_str() },
         "favicon_url": site.favicon_url,
         "home_url": "/",
-        "navigation": site.navigation.iter().filter(|item| item.is_available(site.rss_enabled)).map(|item| {
-            let url = item.resolved_url();
-            json!({
-                "label": item.label,
-                "target": item.target,
-                "url": url,
-                "translation_key": item.translation_key(),
-                "active": current_url == url || (url != "/" && current_url.starts_with(url)),
-            })
-        }).collect::<Vec<_>>(),
     })
 }
 
@@ -534,14 +524,8 @@ async fn serve_attachment(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        SiteSettings, encode_query_component, excerpt, pagination_context, reading_minutes,
-        site_context,
-    };
-    use crate::{
-        config::{SiteNavigationItem, SiteNavigationTarget},
-        utils::Pagination,
-    };
+    use super::{encode_query_component, excerpt, pagination_context, reading_minutes};
+    use crate::utils::Pagination;
 
     #[test]
     fn creates_a_short_plain_text_excerpt() {
@@ -565,53 +549,5 @@ mod tests {
         assert_eq!(context["previous_url"], "/tags/Rust?page=1");
         assert_eq!(context["next_url"], "/tags/Rust?page=3");
         assert_eq!(encode_query_component("Rust & Web"), "Rust%20%26%20Web");
-    }
-
-    #[test]
-    fn does_not_invent_default_navigation() {
-        let context = site_context(&SiteSettings::default(), "/");
-        let navigation = context["navigation"].as_array().unwrap();
-
-        assert!(navigation.is_empty());
-    }
-
-    #[test]
-    fn resolves_system_navigation_targets_in_the_theme_context() {
-        let settings = SiteSettings {
-            navigation: vec![SiteNavigationItem {
-                label: "Ignored label".to_string(),
-                url: "https://example.invalid/ignored".to_string(),
-                target: SiteNavigationTarget::Archives,
-            }],
-            ..Default::default()
-        };
-
-        let context = site_context(&settings, "/archives");
-        let item = &context["navigation"][0];
-
-        assert_eq!(item["target"], "archives");
-        assert_eq!(item["url"], "/archives");
-        assert_eq!(item["translation_key"], "archives");
-        assert_eq!(item["active"], true);
-    }
-
-    #[test]
-    fn omits_feed_navigation_when_rss_is_disabled() {
-        let settings = SiteSettings {
-            rss_enabled: false,
-            navigation: vec![SiteNavigationItem {
-                label: String::new(),
-                url: String::new(),
-                target: SiteNavigationTarget::Feed,
-            }],
-            ..Default::default()
-        };
-
-        assert!(
-            site_context(&settings, "/")["navigation"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
     }
 }

@@ -119,6 +119,7 @@ impl ThemeConfigField {
             ThemeConfigFieldType::Boolean => value.is_boolean(),
             ThemeConfigFieldType::Integer => value.as_i64().is_some() || value.as_u64().is_some(),
             ThemeConfigFieldType::Number => value.is_number(),
+            ThemeConfigFieldType::Json => true,
         };
         if !valid_type {
             return Err(ThemeConfigError::InvalidValue {
@@ -158,6 +159,7 @@ pub enum ThemeConfigFieldType {
     Integer,
     Number,
     Select,
+    Json,
 }
 
 impl std::fmt::Display for ThemeConfigFieldType {
@@ -168,6 +170,7 @@ impl std::fmt::Display for ThemeConfigFieldType {
             Self::Integer => "integer",
             Self::Number => "number",
             Self::Select => "select",
+            Self::Json => "json",
         })
     }
 }
@@ -222,6 +225,12 @@ mod tests {
                 default = 10
                 min = 1
                 max = 50
+
+                [[config]]
+                key = "navigation"
+                label = "Navigation"
+                type = "json"
+                default = [{ label = "Home", url = "/" }]
             "#,
         )
         .unwrap()
@@ -243,6 +252,7 @@ mod tests {
         assert_eq!(config["subtitle"], "Personal notes");
         assert_eq!(config["layout"], "journal");
         assert_eq!(config["sidebar_width"], 20);
+        assert_eq!(config["navigation"][0]["url"], "/");
     }
 
     #[test]
@@ -253,5 +263,21 @@ mod tests {
 
         assert!(manifest.resolve_config(&unknown, true).is_err());
         assert!(manifest.resolve_config(&invalid, true).is_err());
+    }
+
+    #[test]
+    fn accepts_any_json_value_for_json_fields() {
+        let manifest = manifest();
+        let config = manifest
+            .resolve_config(
+                &serde_json::from_value(
+                    json!({ "navigation": [{ "label": "About", "url": "/about" }] }),
+                )
+                .unwrap(),
+                true,
+            )
+            .unwrap();
+
+        assert_eq!(config["navigation"][0]["label"], "About");
     }
 }
