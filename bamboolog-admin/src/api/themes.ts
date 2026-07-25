@@ -35,12 +35,12 @@ export interface ThemeConfiguration {
 }
 
 export const themesApi = {
-    list: () => api.get<ApiResponse<ThemeDetails[]>>('/themes'),
+    list: () => api.get<ApiResponse<ThemeDetails[]>>('/themes/'),
 
     upload: (file: File) => {
         const formData = new FormData()
         formData.append('file', file)
-        return api.post<ApiResponse<ThemeDetails>>('/themes', formData, {
+        return api.post<ApiResponse<ThemeDetails>>('/themes/', formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         })
     },
