@@ -31,6 +31,7 @@ pub struct PostCreateRequest {
     pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub hidden: Option<bool>,
+    pub functions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +46,7 @@ pub struct PostUpdateRequest {
     pub tags: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
     pub hidden: Option<bool>,
+    pub functions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +71,7 @@ pub struct PostListItem {
     pub description: Option<String>,
     pub illustration: Option<String>,
     pub hidden: Option<bool>,
+    pub functions: entity::post::PostFunctions,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,6 +88,7 @@ pub struct PostDetailResponse {
     pub tags: Vec<String>,
     pub categories: Vec<String>,
     pub hidden: bool,
+    pub functions: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -254,6 +258,7 @@ pub async fn create_post(
         .unwrap_or_else(|| created_at.clone());
     let tags = post_payload.tags.unwrap_or_default();
     let categories = post_payload.categories.unwrap_or_default();
+    let functions = post_payload.functions.unwrap_or_default();
     let active_model = entity::post::ActiveModel {
         id: ActiveValue::NotSet,
         name: ActiveValue::Set(post_payload.name),
@@ -263,6 +268,7 @@ pub async fn create_post(
         description: ActiveValue::Set(post_payload.description),
         illustration: ActiveValue::Set(post_payload.illustration),
         hidden: ActiveValue::Set(Some(post_payload.hidden.unwrap_or(false))),
+        functions: ActiveValue::Set(entity::post::PostFunctions(functions)),
         created_at: ActiveValue::Set(created_at.clone()),
         updated_at: ActiveValue::Set(Some(updated_at)),
     };
@@ -335,6 +341,10 @@ pub async fn edit_post(
         active_model.hidden = ActiveValue::Set(Some(hidden));
     }
 
+    if let Some(functions) = post_payload.functions {
+        active_model.functions = ActiveValue::Set(entity::post::PostFunctions(functions));
+    }
+
     active_model.updated_at = ActiveValue::Set(Some(
         post_payload
             .updated_at
@@ -385,6 +395,7 @@ async fn post_detail_response(
         tags: terms.tags,
         categories: terms.categories,
         hidden: post.hidden.unwrap_or(false),
+        functions: post.functions.0,
     })
 }
 
@@ -510,6 +521,7 @@ mod tests {
             "tags": ["Rust", "Web"],
             "categories": ["Engineering"],
             "hidden": true,
+            "functions": ["mermaid"],
             "created_at": 1700000000,
             "updated_at": 1700000100,
             "user": 999,
@@ -536,6 +548,7 @@ mod tests {
         assert_eq!(terms.tags, ["Rust", "Web"]);
         assert_eq!(terms.categories, ["Engineering"]);
         assert_eq!(post.hidden, Some(true));
+        assert_eq!(post.functions.0, ["mermaid"]);
         assert_eq!(post.created_at.timestamp(), 1_700_000_000);
         assert_eq!(post.updated_at.unwrap().timestamp(), 1_700_000_100);
     }

@@ -1,4 +1,9 @@
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, FromJsonQueryResult)]
+#[serde(transparent)]
+pub struct PostFunctions(pub Vec<String>);
 
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -14,6 +19,8 @@ pub struct Model {
     pub description: Option<String>,
     pub illustration: Option<String>,
     pub hidden: Option<bool>,
+    #[sea_orm(default_value = "[]")]
+    pub functions: PostFunctions,
     #[sea_orm(default_expr = "Expr::current_timestamp()")]
     pub created_at: DateTimeUtc,
     pub updated_at: Option<DateTimeUtc>,

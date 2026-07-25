@@ -556,6 +556,10 @@ impl ThemeService {
                 "config": loaded_theme.config,
             }),
         );
+        if let Some(page) = context.get_mut("page").and_then(JsonValue::as_object_mut) {
+            page.entry("functions".to_string())
+                .or_insert_with(|| json!([]));
+        }
         let language = context
             .get("site")
             .and_then(JsonValue::as_object)

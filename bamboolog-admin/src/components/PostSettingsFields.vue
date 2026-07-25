@@ -30,6 +30,9 @@
   <n-form-item :label="$t('posts.tags')">
     <n-dynamic-tags v-model:value="model.tags" />
   </n-form-item>
+  <n-form-item :label="$t('posts.functions')">
+    <n-dynamic-tags v-model:value="model.functions" />
+  </n-form-item>
   <n-form-item :label="$t('posts.hidden')">
     <n-switch v-model:value="model.hidden" />
   </n-form-item>
@@ -86,6 +89,7 @@ export interface PostSettingsForm {
   illustration: string
   categories: string[]
   tags: string[]
+  functions: string[]
   hidden: boolean
 }
 

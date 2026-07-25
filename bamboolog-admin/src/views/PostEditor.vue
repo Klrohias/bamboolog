@@ -125,6 +125,7 @@ interface PostForm {
   categories: string[]
   tags: string[]
   hidden: boolean
+  functions: string[]
 }
 
 function createEmptyForm(): PostForm {
@@ -139,7 +140,8 @@ function createEmptyForm(): PostForm {
     illustration: '',
     categories: [] as string[],
     tags: [] as string[],
-    hidden: false
+    hidden: false,
+    functions: [] as string[]
   }
 }
 
@@ -175,7 +177,8 @@ async function fetchPost() {
       illustration: post.illustration || '',
       categories: post.categories || [],
       tags: post.tags || [],
-      hidden: post.hidden || false
+      hidden: post.hidden || false,
+      functions: post.functions || []
     }
   } catch (e: any) {
     message.error(t('posts.fetch_failed'))

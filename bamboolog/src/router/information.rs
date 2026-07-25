@@ -177,7 +177,10 @@ fn xml_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{render_rss, render_sitemap, xml_escape};
-    use crate::{config::SiteSettings, entity::post::Model as Post};
+    use crate::{
+        config::SiteSettings,
+        entity::post::{Model as Post, PostFunctions},
+    };
     use chrono::Utc;
 
     fn post() -> Post {
@@ -190,6 +193,7 @@ mod tests {
             description: Some("A <description>".to_string()),
             illustration: None,
             hidden: Some(false),
+            functions: PostFunctions::default(),
             created_at: Utc::now(),
             updated_at: None,
         }

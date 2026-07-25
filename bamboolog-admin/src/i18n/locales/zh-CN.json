@@ -54,6 +54,7 @@
         "illustration_image_only": "只能上传图片文件",
         "categories": "分类",
         "tags": "标签",
+        "functions": "页面功能",
         "hidden": "不在公开站点显示",
         "image_storage": "图片存储引擎",
         "default_storage": "使用默认存储引擎",

@@ -377,7 +377,14 @@ async fn display_post(
                 LAYOUT_POST,
                 json!({
                     "site": site_context(&site),
-                    "page": { "kind": "post", "title": post.title, "description": post.description.clone().unwrap_or_else(|| excerpt(&post.content, 240)), "illustration": post.illustration.clone(), "url": post_url(&post) },
+                    "page": {
+                        "kind": "post", 
+                        "title": post.title, 
+                        "description": post.description.clone().unwrap_or_else(|| excerpt(&post.content, 240)), 
+                        "illustration": post.illustration.clone(), 
+                        "url": post_url(&post), 
+                        "functions": post.functions.0 
+                    },
                     "content": rendered_content,
                     "post": post_detail(&post_with_terms),
                     "newer_post": newer_post.map(post_summary),
@@ -454,6 +461,7 @@ fn post_summary(context: &PostWithTerms) -> Value {
         "illustration": post.illustration,
         "tags": context.terms.tags,
         "categories": context.terms.categories,
+        "functions": post.functions.0,
     })
 }
 

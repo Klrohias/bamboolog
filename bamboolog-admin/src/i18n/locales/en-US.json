@@ -54,6 +54,7 @@
         "illustration_image_only": "Only image files can be uploaded",
         "categories": "Categories",
         "tags": "Tags",
+        "functions": "Page features",
         "hidden": "Hide from public site",
         "image_storage": "Image Storage Engine",
         "default_storage": "Use default storage engine",
