@@ -1,5 +1,5 @@
 <template>
-  <n-form class="post-editor" :model="form" ref="formRef" :rules="rules">
+  <n-form class="post-editor" :model="form" ref="formRef">
     <n-layout class="editor-layout" :has-sider="isDesktop" sider-placement="right">
       <n-layout-content class="editor-workspace">
         <header class="editor-toolbar">
@@ -125,10 +125,6 @@ const form = ref({
   hidden: false
 })
 
-const rules = {
-  name: { required: true, message: () => t('posts.slug'), trigger: 'blur' }
-}
-
 async function fetchPost() {
   editorReady.value = false
   form.value = { title: '', name: '', content: '', description: '', illustration: '', categories: [], tags: [], hidden: false }
@@ -175,6 +171,9 @@ async function handleSave() {
   if (!form.value.content.trim()) {
     message.error(t('posts.content'))
     return
+  }
+  if (!form.value.name.trim()) {
+    form.value.name = `post-${crypto.randomUUID()}`
   }
 
   try {
