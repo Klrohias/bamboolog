@@ -97,8 +97,6 @@ const MAX_THEME_EXTRACTED_SIZE: u64 = 100 * 1024 * 1024;
 pub enum ThemeInstallError {
     #[error("Invalid theme archive: {0}")]
     InvalidArchive(String),
-    #[error("Theme `{0}` is already installed")]
-    AlreadyInstalled(String),
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -113,9 +111,6 @@ pub fn install_theme_archive(
     let installed_directory = installed_themes_directory(asset_dir);
     fs::create_dir_all(&installed_directory)?;
     let destination = installed_directory.join(&theme_id);
-    if destination.exists() {
-        return Err(ThemeInstallError::AlreadyInstalled(theme_id));
-    }
 
     let temporary_directory = tempfile::Builder::new()
         .prefix(".theme-upload-")
@@ -169,6 +164,9 @@ pub fn install_theme_archive(
     }
 
     let manifest = validate_theme_directory(&theme_directory)?;
+    if destination.exists() {
+        fs::remove_dir_all(&destination)?;
+    }
     fs::rename(&theme_directory, &destination)?;
 
     Ok(ThemeDetails {
@@ -1057,6 +1055,35 @@ mod tests {
                 .join("themes/installed/incomplete")
                 .exists()
         );
+    }
+
+    #[test]
+    fn upgrades_an_existing_theme_after_validating_the_new_archive() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let asset_dir = temporary_directory.path();
+        install_theme_archive(asset_dir, &theme_archive("uploaded", true)).unwrap();
+        let installed_theme = asset_dir.join("themes/installed/uploaded");
+        std::fs::write(installed_theme.join("obsolete-file"), "old").unwrap();
+
+        install_theme_archive(asset_dir, &theme_archive("uploaded", true)).unwrap();
+
+        assert!(installed_theme.join("manifest.toml").is_file());
+        assert!(!installed_theme.join("obsolete-file").exists());
+    }
+
+    #[test]
+    fn keeps_an_existing_theme_when_the_upgrade_archive_is_invalid() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let asset_dir = temporary_directory.path();
+        install_theme_archive(asset_dir, &theme_archive("uploaded", true)).unwrap();
+        let installed_theme = asset_dir.join("themes/installed/uploaded");
+        std::fs::write(installed_theme.join("existing-file"), "keep").unwrap();
+
+        let error =
+            install_theme_archive(asset_dir, &theme_archive("uploaded", false)).unwrap_err();
+
+        assert!(matches!(error, ThemeInstallError::InvalidArchive(_)));
+        assert!(installed_theme.join("existing-file").is_file());
     }
 
     #[test]

@@ -2,7 +2,7 @@
   <n-space vertical size="large">
     <n-page-header :title="$t('themes.title')" :subtitle="$t('themes.subtitle')">
       <template #extra>
-        <n-button type="primary" @click="uploadVisible = true">{{ $t('themes.upload') }}</n-button>
+        <n-button type="primary" @click="uploadVisible = true">{{ $t('themes.upload_or_upgrade') }}</n-button>
       </template>
     </n-page-header>
 
@@ -58,7 +58,7 @@
       </n-descriptions>
     </n-modal>
 
-    <n-modal v-model:show="uploadVisible" preset="card" :title="$t('themes.upload_title')" style="width: min(560px, calc(100vw - 32px))" :mask-closable="!uploading" :closable="!uploading">
+    <n-modal v-model:show="uploadVisible" preset="card" :title="$t('themes.upload_or_upgrade_title')" style="width: min(560px, calc(100vw - 32px))" :mask-closable="!uploading" :closable="!uploading">
       <n-upload
         v-model:file-list="uploadFiles"
         :default-upload="false"
@@ -74,7 +74,7 @@
             </n-icon>
           </div>
           <div class="upload-text">{{ $t('themes.upload_hint') }}</div>
-          <div class="upload-help">{{ $t('themes.upload_limit') }}</div>
+          <div class="upload-help">{{ $t('themes.upload_limit') }} {{ $t('themes.upload_upgrade_hint') }}</div>
         </n-upload-dragger>
       </n-upload>
       <template #footer>
@@ -178,7 +178,7 @@ async function uploadTheme() {
     uploadVisible.value = false
     uploadFiles.value = []
     await fetchThemes()
-    message.success(t('themes.upload_success'))
+    message.success(t('themes.upload_or_upgrade_success'))
   } catch {
     message.error(t('themes.upload_failed'))
   } finally {

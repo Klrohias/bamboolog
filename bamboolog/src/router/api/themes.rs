@@ -55,6 +55,7 @@ async fn list_themes(
 
 async fn upload_theme(
     Extension(config): Extension<Arc<ApplicationConfiguration>>,
+    Extension(reloader): Extension<ServiceReloader>,
     _claims: JwtClaims,
     mut multipart: Multipart,
 ) -> Result<Response, Response> {
@@ -109,15 +110,12 @@ async fn upload_theme(
             ThemeInstallError::InvalidArchive(message) => {
                 message_response(StatusCode::BAD_REQUEST, message)
             }
-            ThemeInstallError::AlreadyInstalled(theme) => message_response(
-                StatusCode::CONFLICT,
-                format!("Theme `{theme}` is already installed"),
-            ),
             ThemeInstallError::Io(error) => {
                 tracing::error!("Failed to install uploaded theme: {error}");
                 ApiResponse::internal_server_error().into_response()
             }
         })?;
+    reloader.reload().await;
     Ok(ApiResponse::ok(theme).into_response())
 }
 
