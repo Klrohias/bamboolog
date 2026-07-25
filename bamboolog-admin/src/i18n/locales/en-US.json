@@ -30,7 +30,9 @@
         "profile": "Profile",
         "changePassword": "Change Password",
         "attachments": "Attachments",
-        "storage_engine": "Storage Engine"
+        "storage_engine": "Storage Engine",
+        "expand": "Expand",
+        "collapse": "Collapse"
     },
     "posts": {
         "title": "Title",

@@ -1,64 +1,81 @@
 <template>
   <n-form class="post-editor" :model="form" ref="formRef" :rules="rules">
-    <section class="editor-workspace">
-      <header class="editor-toolbar">
-        <n-button class="editor-back" quaternary @click="$router.push('/posts')">
-          <template #icon>
-            <n-icon><arrow-back-outline /></n-icon>
-          </template>
-          {{ isEdit ? $t('posts.edit_post') : $t('posts.new_post') }}
-        </n-button>
-        <n-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</n-button>
-      </header>
+    <n-layout class="editor-layout" :has-sider="isDesktop" sider-placement="right">
+      <n-layout-content class="editor-workspace">
+        <header class="editor-toolbar">
+          <n-button class="editor-back" quaternary @click="$router.push('/posts')">
+            <template #icon>
+              <n-icon><arrow-back-outline /></n-icon>
+            </template>
+            {{ isEdit ? $t('posts.edit_post') : $t('posts.new_post') }}
+          </n-button>
+          <n-space size="small">
+            <n-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</n-button>
+            <n-tooltip v-if="isDesktop && settingsCollapsed">
+              <template #trigger>
+                <n-button quaternary circle :aria-label="settingsToggleLabel" @click="settingsCollapsed = false">
+                  <template #icon>
+                    <n-icon><chevron-back-outline /></n-icon>
+                  </template>
+                </n-button>
+              </template>
+              {{ settingsToggleLabel }}
+            </n-tooltip>
+          </n-space>
+        </header>
 
-      <n-input v-model:value="form.title" class="editor-title-input" :bordered="false" size="large"
-        :placeholder="$t('posts.title')" />
-      <div class="editor-content-field">
-        <n-spin v-if="!editorReady" class="editor-loading" size="small" />
-        <MarkdownEditor v-else v-model="form.content" :storage-engine-id="storageEngineId ?? undefined"
-          @upload-error="message.error(t('posts.image_upload_failed'))" />
-      </div>
-    </section>
+        <n-input v-model:value="form.title" class="editor-title-input" :bordered="false" size="large"
+          :placeholder="$t('posts.title')" />
+        <div class="editor-content-field">
+          <n-spin v-if="!editorReady" class="editor-loading" size="small" />
+          <MarkdownEditor v-else v-model="form.content" :storage-engine-id="storageEngineId ?? undefined"
+            @upload-error="message.error(t('posts.image_upload_failed'))" />
+        </div>
+      </n-layout-content>
 
-    <section class="post-settings">
+      <n-layout-sider v-if="isDesktop" class="post-settings-sidebar" bordered collapse-mode="transform"
+        :collapsed-width="0" :width="360" :collapsed="settingsCollapsed">
+        <n-affix class="post-settings-affix" :top="64" :trigger-top="64">
+          <header class="post-settings-header">
+            <span>{{ $t('common.post_settings') }}</span>
+            <n-tooltip>
+              <template #trigger>
+                <n-button quaternary circle :aria-label="settingsToggleLabel" @click="settingsCollapsed = true">
+                  <template #icon>
+                    <n-icon><chevron-forward-outline /></n-icon>
+                  </template>
+                </n-button>
+              </template>
+              {{ settingsToggleLabel }}
+            </n-tooltip>
+          </header>
+          <div class="post-settings-fields">
+            <PostSettingsFields v-model:model="form" v-model:storage-engine-id="storageEngineId"
+              :storage-engine-options="storageEngineOptions" />
+          </div>
+        </n-affix>
+      </n-layout-sider>
+    </n-layout>
+
+    <section v-if="!isDesktop" class="post-settings post-settings-mobile">
       <n-card :title="$t('common.post_settings')">
-        <n-form-item :label="$t('posts.slug')" path="name">
-          <n-input v-model:value="form.name" :placeholder="$t('posts.slug')" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.description')">
-          <n-input v-model:value="form.description" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }"
-            :placeholder="$t('posts.description_placeholder')" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.illustration')">
-          <n-input v-model:value="form.illustration" :placeholder="$t('posts.illustration_placeholder')" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.categories')">
-          <n-dynamic-tags v-model:value="form.categories" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.tags')">
-          <n-dynamic-tags v-model:value="form.tags" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.hidden')">
-          <n-switch v-model:value="form.hidden" />
-        </n-form-item>
-        <n-form-item :label="$t('posts.image_storage')">
-          <n-select v-model:value="storageEngineId" clearable :options="storageEngineOptions"
-            :placeholder="$t('posts.default_storage')" />
-        </n-form-item>
+        <PostSettingsFields v-model:model="form" v-model:storage-engine-id="storageEngineId"
+          :storage-engine-options="storageEngineOptions" />
       </n-card>
     </section>
   </n-form>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, type FormInst } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { ArrowBackOutline } from '@vicons/ionicons5'
+import { ArrowBackOutline, ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
 import { postsApi } from '@/api/posts'
 import { storageApi, type StorageEngine } from '@/api/storage'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import PostSettingsFields from '@/components/PostSettingsFields.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -71,6 +88,17 @@ const saving = ref(false)
 const editorReady = ref(false)
 const storageEngines = ref<StorageEngine[]>([])
 const storageEngineId = ref<number | null>(null)
+const isDesktop = ref(false)
+const settingsCollapsed = ref(false)
+let desktopQuery: MediaQueryList | undefined
+
+function handleDesktopQueryChange(event: MediaQueryListEvent) {
+  isDesktop.value = event.matches
+}
+
+const settingsToggleLabel = computed(() =>
+  settingsCollapsed.value ? t('common.expand') : t('common.collapse')
+)
 
 const storageEngineOptions = computed(() =>
   storageEngines.value
@@ -165,10 +193,23 @@ async function handleSave() {
 }
 
 watch(() => route.params.id, fetchPost, { immediate: true })
-onMounted(fetchStorageEngines)
+onMounted(() => {
+  fetchStorageEngines()
+  desktopQuery = window.matchMedia('(min-width: 1024px)')
+  isDesktop.value = desktopQuery.matches
+  desktopQuery.addEventListener('change', handleDesktopQueryChange)
+})
+
+onBeforeUnmount(() => {
+  desktopQuery?.removeEventListener('change', handleDesktopQueryChange)
+})
 </script>
 
 <style scoped>
+.editor-layout {
+  min-height: calc(100vh - 64px);
+}
+
 .editor-workspace {
   min-height: calc(100vh - 64px);
   background: var(--n-color);
@@ -217,10 +258,42 @@ onMounted(fetchStorageEngines)
   justify-content: center;
 }
 
-.post-settings {
+.post-settings-sidebar {
+  overflow-y: auto;
+  background: var(--n-color);
+}
+
+.post-settings-affix {
+  width: 360px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: var(--n-color);
+}
+
+.post-settings-header {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 20px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.post-settings-fields {
+  padding: 8px 20px 24px;
+}
+
+.post-settings-mobile {
   max-width: 1200px;
   margin: 0 auto;
   padding: 30px 40px;
+}
+
+@media (max-width: 1023px) {
+  .post-settings-mobile {
+    padding-inline: 16px;
+  }
 }
 
 @media (max-width: 767px) {
@@ -240,8 +313,5 @@ onMounted(fetchStorageEngines)
     font-size: 24px;
   }
 
-  .post-settings {
-    padding-inline: 16px;
-  }
 }
 </style>
