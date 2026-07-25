@@ -27,13 +27,12 @@ impl StorageService {
     ) -> Result<attachment::Model, anyhow::Error> {
         let hash = format!("{:x}", md5::compute(data));
 
-        if attachment::Entity::find()
+        if let Some(existing_attachment) = attachment::Entity::find()
             .filter(attachment::Column::Hash.eq(&hash))
             .one(db)
             .await?
-            .is_some()
         {
-            return Err(anyhow::anyhow!("File with hash {hash} already exists"));
+            return Ok(existing_attachment);
         }
 
         let engine = Self::resolve_engine(db, engine_id).await?;
