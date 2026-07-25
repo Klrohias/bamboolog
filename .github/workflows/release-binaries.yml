@@ -25,10 +25,6 @@ jobs:
             asset: linux-aarch64
             archive: tar.gz
             cross_compile: true
-          - os: macos-13
-            target: x86_64-apple-darwin
-            asset: macos-x86_64
-            archive: tar.gz
           - os: macos-14
             target: aarch64-apple-darwin
             asset: macos-aarch64
@@ -56,6 +52,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: release-${{ matrix.target }}
+
+      - name: Enable C11 for AWS-LC on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content $env:GITHUB_ENV 'AWS_LC_SYS_C_STD=11'
 
       - name: Build binary
         env:

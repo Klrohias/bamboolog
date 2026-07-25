@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 FROM node:22-alpine AS frontend
 WORKDIR /app
 
@@ -12,10 +10,10 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 COPY bamboolog-admin/ ./
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
-    pnpm install --offline --frozen-lockfile && \
+    pnpm install --offline --frozen-lockfile --dangerously-allow-all-builds && \
     pnpm run build
 
-FROM rust:1.88-alpine3.22 AS builder
+FROM rust:1.94-alpine3.22 AS builder
 WORKDIR /app
 
 RUN apk add --no-cache build-base cmake musl-dev
