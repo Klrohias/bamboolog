@@ -1,0 +1,104 @@
+name: Publish release binaries
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: linux-x86_64
+            archive: tar.gz
+          - os: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+            asset: linux-aarch64
+            archive: tar.gz
+            cross_compile: true
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset: macos-x86_64
+            archive: tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: macos-aarch64
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: windows-x86_64
+            archive: zip
+            binary: bamboolog.exe
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install Linux ARM64 toolchain
+        if: matrix.cross_compile
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-aarch64-linux-gnu
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-${{ matrix.target }}
+
+      - name: Build binary
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_compile && 'aarch64-linux-gnu-gcc' || '' }}
+        run: cargo build --locked --release --package bamboolog --bin bamboolog --target ${{ matrix.target }}
+
+      - name: Archive Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/bamboolog dist/bamboolog-${{ matrix.asset }}
+          tar -C dist -czf bamboolog-${{ matrix.asset }}.tar.gz bamboolog-${{ matrix.asset }}
+
+      - name: Archive Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/bamboolog-${{ matrix.asset }}.exe"
+          Compress-Archive -Path "dist/bamboolog-${{ matrix.asset }}.exe" -DestinationPath "bamboolog-${{ matrix.asset }}.zip"
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: bamboolog-${{ matrix.asset }}
+          path: bamboolog-${{ matrix.asset }}.${{ matrix.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*

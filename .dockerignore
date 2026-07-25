@@ -1,0 +1,11 @@
+.git
+.github
+.codegraph
+.DS_Store
+.pnpm-store
+node_modules
+**/node_modules
+target
+**/target
+bamboolog/admin-dist
+*.md
