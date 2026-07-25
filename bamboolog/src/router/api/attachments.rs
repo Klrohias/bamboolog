@@ -9,11 +9,9 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tracing::instrument;
 
 use crate::{
-    config::ApplicationConfiguration,
     entity::attachment,
     service::{jwt::JwtClaims, storage::StorageService},
     utils::{ApiResponse, HttpFailibleOperationExts, Pagination},
@@ -48,7 +46,7 @@ pub struct AttachmentList {
 #[instrument(skip_all)]
 async fn upload_attachment(
     Extension(db): Extension<DatabaseConnection>,
-    Extension(config): Extension<Arc<ApplicationConfiguration>>,
+    Extension(storage): Extension<StorageService>,
     _user: JwtClaims,
     mut multipart: Multipart,
 ) -> Result<Response, Response> {
@@ -102,16 +100,10 @@ async fn upload_attachment(
         .into_response());
     }
 
-    let attachment = StorageService::upload(
-        &db,
-        config.clone(),
-        &file,
-        content_type,
-        filename,
-        storage_engine_id,
-    )
-    .await
-    .traced_and_response(|e| tracing::error!("{}", e))?;
+    let attachment = storage
+        .upload(&db, file, content_type, filename, storage_engine_id)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(attachment).into_response())
 }
@@ -175,10 +167,11 @@ async fn list_attachments(
 async fn delete_attachment(
     Path(id): Path<i32>,
     Extension(db): Extension<DatabaseConnection>,
-    Extension(config): Extension<Arc<ApplicationConfiguration>>,
+    Extension(storage): Extension<StorageService>,
     _user: JwtClaims,
 ) -> Result<Response, Response> {
-    StorageService::delete(&db, config.clone(), id)
+    storage
+        .delete(&db, id)
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
     Ok(ApiResponse::ok(()).into_response())

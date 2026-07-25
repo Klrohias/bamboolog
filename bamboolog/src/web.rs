@@ -5,6 +5,7 @@ use crate::{
         jwt::JwtService,
         reloadable::{ReloadableService, ServiceReloader},
         site_settings::SiteSettingsService,
+        storage::StorageService,
         theme::ThemeService,
     },
 };
@@ -50,6 +51,7 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
     let jwt_service = configure_jwt_service(&database).await;
     let site_settings_service = configure_site_settings_service(&database).await;
     let theme_service = configure_theme_service(&database, &config, &site_settings_service).await;
+    let storage_service = StorageService::new(config.clone());
     let service_reloader = ServiceReloader::new(vec![
         Box::new(jwt_service.clone()),
         Box::new(site_settings_service.clone()),
@@ -63,6 +65,7 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
             .layer(Extension(jwt_service))
             .layer(Extension(site_settings_service))
             .layer(Extension(theme_service))
+            .layer(Extension(storage_service))
             .layer(Extension(service_reloader)),
     )
 }

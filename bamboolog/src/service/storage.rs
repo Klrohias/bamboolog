@@ -1,12 +1,12 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use axum::{
-    body::Body,
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use sea_orm::*;
+use tokio::sync::RwLock;
 
 use crate::{
     config::ApplicationConfiguration,
@@ -14,18 +14,41 @@ use crate::{
     storage::create_storage_provider,
 };
 
-pub struct StorageService;
+#[derive(Clone)]
+pub struct StorageService {
+    config: Arc<ApplicationConfiguration>,
+    providers: Arc<RwLock<HashMap<i32, CachedProvider>>>,
+}
+
+struct CachedProvider {
+    fingerprint: StorageEngineFingerprint,
+    provider: Arc<dyn crate::storage::AttachmentStorage>,
+}
+
+#[derive(PartialEq, Eq)]
+struct StorageEngineFingerprint {
+    kind: String,
+    config_json: Option<String>,
+}
 
 impl StorageService {
+    pub fn new(config: Arc<ApplicationConfiguration>) -> Self {
+        Self {
+            config,
+            providers: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
     pub async fn upload(
+        &self,
         db: &DatabaseConnection,
-        config: Arc<ApplicationConfiguration>,
-        data: &[u8],
+        data: Vec<u8>,
         mime_type: String,
         filename: Option<String>,
         engine_id: Option<i32>,
     ) -> Result<attachment::Model, anyhow::Error> {
-        let hash = format!("{:x}", md5::compute(data));
+        let byte_size = i64::try_from(data.len()).unwrap_or(i64::MAX);
+        let hash = format!("{:x}", md5::compute(&data));
 
         if let Some(existing_attachment) = attachment::Entity::find()
             .filter(attachment::Column::Hash.eq(&hash))
@@ -41,7 +64,7 @@ impl StorageService {
             .unwrap_or(&"bin");
         let key = format!("attachments/{}/{}.{}", engine.id, hash, ext);
 
-        let provider = create_storage_provider(config, &engine).await?;
+        let provider = self.provider_for(&engine).await?;
         provider
             .put(&key, data, &mime_type)
             .await
@@ -53,7 +76,7 @@ impl StorageService {
             object_key: Set(key.clone()),
             filename: Set(filename.unwrap_or_default()),
             mime: Set(mime_type),
-            byte_size: Set(i64::try_from(data.len()).unwrap_or(i64::MAX)),
+            byte_size: Set(byte_size),
             ..Default::default()
         };
 
@@ -71,8 +94,8 @@ impl StorageService {
     }
 
     pub async fn serve(
+        &self,
         db: &DatabaseConnection,
-        config: Arc<ApplicationConfiguration>,
         hash: &str,
     ) -> Result<Response, anyhow::Error> {
         let attach = attachment::Entity::find()
@@ -86,23 +109,22 @@ impl StorageService {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Storage engine not found"))?;
 
-        let provider = create_storage_provider(config, &engine).await?;
+        let provider = self.provider_for(&engine).await?;
         let object = provider.get(&attach.object_key).await?;
         let content_type = object.mime.unwrap_or(attach.mime);
 
         Ok((
             StatusCode::OK,
-            [(header::CONTENT_TYPE, content_type)],
-            Body::from(object.bytes),
+            [
+                (header::CONTENT_TYPE, content_type),
+                (header::CONTENT_LENGTH, attach.byte_size.to_string()),
+            ],
+            object.body,
         )
             .into_response())
     }
 
-    pub async fn delete(
-        db: &DatabaseConnection,
-        config: Arc<ApplicationConfiguration>,
-        id: i32,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn delete(&self, db: &DatabaseConnection, id: i32) -> Result<(), anyhow::Error> {
         let attach = attachment::Entity::find_by_id(id)
             .one(db)
             .await?
@@ -112,7 +134,7 @@ impl StorageService {
             .one(db)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Storage engine not found"))?;
-        let provider = create_storage_provider(config, &engine).await?;
+        let provider = self.provider_for(&engine).await?;
 
         provider.delete(&attach.object_key).await?;
         attachment::Entity::delete_by_id(id).exec(db).await?;
@@ -142,5 +164,75 @@ impl StorageService {
             .one(db)
             .await?
             .ok_or_else(|| anyhow::anyhow!("No enabled storage engine found"))
+    }
+
+    async fn provider_for(
+        &self,
+        engine: &storage_engine::Model,
+    ) -> Result<Arc<dyn crate::storage::AttachmentStorage>, anyhow::Error> {
+        let fingerprint = StorageEngineFingerprint {
+            kind: engine.kind.clone(),
+            config_json: engine.config_json.clone(),
+        };
+
+        if let Some(cached) = self.providers.read().await.get(&engine.id)
+            && cached.fingerprint == fingerprint
+        {
+            return Ok(cached.provider.clone());
+        }
+
+        let provider = create_storage_provider(self.config.clone(), engine).await?;
+        let mut providers = self.providers.write().await;
+        providers.insert(
+            engine.id,
+            CachedProvider {
+                fingerprint,
+                provider: provider.clone(),
+            },
+        );
+        Ok(provider)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::{config::ApplicationConfiguration, entity::storage_engine};
+
+    use super::StorageService;
+
+    fn local_engine(config_json: Option<&str>) -> storage_engine::Model {
+        storage_engine::Model {
+            id: 1,
+            name: "Local storage".to_string(),
+            comments: String::new(),
+            kind: "local".to_string(),
+            config_json: config_json.map(ToOwned::to_owned),
+            is_default: true,
+            enabled: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn reuses_providers_until_the_engine_configuration_changes() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let service = StorageService::new(Arc::new(ApplicationConfiguration {
+            listen_addr: "127.0.0.1:0".to_string(),
+            database: "sqlite::memory:".to_string(),
+            raw_asset_dir: temporary_directory.path().display().to_string(),
+            asset_dir: temporary_directory.path().to_path_buf(),
+        }));
+        let engine = local_engine(None);
+
+        let first = service.provider_for(&engine).await.unwrap();
+        let second = service.provider_for(&engine).await.unwrap();
+
+        assert!(Arc::ptr_eq(&first, &second));
+
+        let changed_engine = local_engine(Some(r#"{"root": "uploads"}"#));
+        let replacement = service.provider_for(&changed_engine).await.unwrap();
+
+        assert!(!Arc::ptr_eq(&first, &replacement));
     }
 }

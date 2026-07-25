@@ -27,7 +27,19 @@
               <n-space justify="end">
                 <n-button @click="openDetails(theme)">{{ $t('themes.details') }}</n-button>
                 <n-button v-if="theme.active" type="primary" @click="router.push('/theme-settings')">{{ $t('themes.configure') }}</n-button>
-                <n-button v-else type="primary" :loading="activating === theme.id" @click="activate(theme)">{{ $t('themes.activate') }}</n-button>
+                <template v-else>
+                  <n-popconfirm
+                    :positive-text="$t('common.confirm')"
+                    :negative-text="$t('common.cancel')"
+                    @positive-click="deleteTheme(theme)"
+                  >
+                    <template #trigger>
+                      <n-button type="error" :loading="deleting === theme.id">{{ $t('themes.delete') }}</n-button>
+                    </template>
+                    {{ $t('themes.delete_confirm', { name: displayName(theme) }) }}
+                  </n-popconfirm>
+                  <n-button type="primary" :loading="activating === theme.id" :disabled="deleting === theme.id" @click="activate(theme)">{{ $t('themes.activate') }}</n-button>
+                </template>
               </n-space>
             </template>
           </n-card>
@@ -81,7 +93,7 @@ import { useMessage, type UploadFileInfo } from 'naive-ui'
 import { ArchiveOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { settingsApi, type ThemeDetails } from '@/api/settings'
+import { themesApi, type ThemeDetails } from '@/api/themes'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -89,6 +101,7 @@ const router = useRouter()
 const themes = ref<ThemeDetails[]>([])
 const loading = ref(false)
 const activating = ref<string | null>(null)
+const deleting = ref<string | null>(null)
 const detailsVisible = ref(false)
 const selectedTheme = ref<ThemeDetails | null>(null)
 const uploadVisible = ref(false)
@@ -107,7 +120,7 @@ function openDetails(theme: ThemeDetails) {
 async function fetchThemes() {
   loading.value = true
   try {
-    const { data } = await settingsApi.getThemes()
+    const { data } = await themesApi.list()
     themes.value = data.data || []
   } catch {
     message.error(t('themes.fetch_failed'))
@@ -119,13 +132,26 @@ async function fetchThemes() {
 async function activate(theme: ThemeDetails) {
   activating.value = theme.id
   try {
-    await settingsApi.activateTheme(theme.id)
+    await themesApi.activate(theme.id)
     await fetchThemes()
     message.success(t('themes.activate_success'))
   } catch {
     message.error(t('themes.activate_failed'))
   } finally {
     activating.value = null
+  }
+}
+
+async function deleteTheme(theme: ThemeDetails) {
+  deleting.value = theme.id
+  try {
+    await themesApi.delete(theme.id)
+    themes.value = themes.value.filter(item => item.id !== theme.id)
+    message.success(t('themes.delete_success'))
+  } catch {
+    message.error(t('themes.delete_failed'))
+  } finally {
+    deleting.value = null
   }
 }
 
@@ -148,7 +174,7 @@ async function uploadTheme() {
   if (!selectedFile || !file || !validateThemeArchive(selectedFile)) return
   uploading.value = true
   try {
-    await settingsApi.uploadTheme(file)
+    await themesApi.upload(file)
     uploadVisible.value = false
     uploadFiles.value = []
     await fetchThemes()

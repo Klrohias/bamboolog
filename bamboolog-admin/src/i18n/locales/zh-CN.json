@@ -118,7 +118,11 @@
         "upload_zip_only": "请选择 ZIP 压缩包",
         "upload_too_large": "主题压缩包不能超过 15 MB",
         "upload_success": "主题上传成功",
-        "upload_failed": "主题上传失败"
+        "upload_failed": "主题上传失败",
+        "delete": "删除",
+        "delete_confirm": "确定删除主题 {name} 吗？",
+        "delete_success": "主题已删除",
+        "delete_failed": "删除主题失败"
     },
     "theme_config": {
         "title": "主题配置",

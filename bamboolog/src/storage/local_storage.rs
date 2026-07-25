@@ -1,7 +1,9 @@
 use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
+use axum::body::Body;
 use tokio::fs;
+use tokio_util::io::ReaderStream;
 
 use super::{AttachmentStorage, StorageError, StorageResult, StoredObject};
 
@@ -32,7 +34,7 @@ impl LocalStorageProvider {
 
 #[async_trait]
 impl AttachmentStorage for LocalStorageProvider {
-    async fn put(&self, key: &str, bytes: &[u8], _mime: &str) -> StorageResult<()> {
+    async fn put(&self, key: &str, bytes: Vec<u8>, _mime: &str) -> StorageResult<()> {
         let path = self.object_path(key)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).await?;
@@ -43,8 +45,11 @@ impl AttachmentStorage for LocalStorageProvider {
 
     async fn get(&self, key: &str) -> StorageResult<StoredObject> {
         let path = self.object_path(key)?;
-        match fs::read(path).await {
-            Ok(bytes) => Ok(StoredObject { bytes, mime: None }),
+        match fs::File::open(path).await {
+            Ok(file) => Ok(StoredObject {
+                body: Body::from_stream(ReaderStream::new(file)),
+                mime: None,
+            }),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Err(StorageError::NotFound)
             }
@@ -64,6 +69,8 @@ impl AttachmentStorage for LocalStorageProvider {
 
 #[cfg(test)]
 mod tests {
+    use axum::body::to_bytes;
+
     use super::LocalStorageProvider;
     use crate::storage::AttachmentStorage;
 
@@ -73,12 +80,17 @@ mod tests {
         let provider = LocalStorageProvider::new(temp_dir.path().to_path_buf());
 
         provider
-            .put("attachments/1/file.txt", b"content", "text/plain")
+            .put("attachments/1/file.txt", b"content".to_vec(), "text/plain")
             .await
             .unwrap();
         assert_eq!(
-            provider.get("attachments/1/file.txt").await.unwrap().bytes,
-            b"content"
+            to_bytes(
+                provider.get("attachments/1/file.txt").await.unwrap().body,
+                usize::MAX,
+            )
+            .await
+            .unwrap(),
+            b"content".as_slice()
         );
 
         provider.delete("attachments/1/file.txt").await.unwrap();
@@ -92,7 +104,7 @@ mod tests {
 
         assert!(
             provider
-                .put("../outside", b"content", "text/plain")
+                .put("../outside", b"content".to_vec(), "text/plain")
                 .await
                 .is_err()
         );

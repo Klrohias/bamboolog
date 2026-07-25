@@ -118,7 +118,11 @@
         "upload_zip_only": "Select a ZIP archive",
         "upload_too_large": "Theme archive must not exceed 15 MB",
         "upload_success": "Theme uploaded",
-        "upload_failed": "Failed to upload theme"
+        "upload_failed": "Failed to upload theme",
+        "delete": "Delete",
+        "delete_confirm": "Delete theme {name}?",
+        "delete_success": "Theme deleted",
+        "delete_failed": "Failed to delete theme"
     },
     "theme_config": {
         "title": "Theme Configuration",

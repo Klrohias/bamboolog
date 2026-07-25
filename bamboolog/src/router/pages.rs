@@ -515,9 +515,10 @@ async fn serve_theme_static(
 async fn serve_attachment(
     Path(hash): Path<String>,
     Extension(db): Extension<DatabaseConnection>,
-    Extension(config): Extension<std::sync::Arc<crate::config::ApplicationConfiguration>>,
+    Extension(storage): Extension<StorageService>,
 ) -> Result<Response, Response> {
-    StorageService::serve(&db, config.clone(), &hash)
+    storage
+        .serve(&db, &hash)
         .await
         .traced_and_response(|e| tracing::error!("{}", e))
 }

@@ -194,6 +194,12 @@ fn archive_theme_id(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<String, T
                 "all entries must be inside one theme directory".to_string(),
             ));
         };
+        let Some(root) = root.to_str() else {
+            return Err(ThemeInstallError::InvalidArchive(
+                "theme directory name must contain only letters, numbers, hyphens, or underscores"
+                    .to_string(),
+            ));
+        };
         if !is_valid_theme_id(root) {
             return Err(ThemeInstallError::InvalidArchive(
                 "theme directory name must contain only letters, numbers, hyphens, or underscores"
@@ -201,22 +207,19 @@ fn archive_theme_id(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<String, T
             ));
         }
         match &theme_id {
-            Some(existing) if existing != &root.to_string_lossy() => {
+            Some(existing) if existing != root => {
                 return Err(ThemeInstallError::InvalidArchive(
                     "archive must contain exactly one theme directory".to_string(),
                 ));
             }
-            None => theme_id = Some(root.to_string_lossy().into_owned()),
+            None => theme_id = Some(root.to_owned()),
             _ => {}
         }
     }
     theme_id.ok_or_else(|| ThemeInstallError::InvalidArchive("archive is empty".to_string()))
 }
 
-fn is_valid_theme_id(theme_id: &std::ffi::OsStr) -> bool {
-    let Some(theme_id) = theme_id.to_str() else {
-        return false;
-    };
+fn is_valid_theme_id(theme_id: &str) -> bool {
     !theme_id.is_empty()
         && theme_id
             .bytes()
@@ -398,6 +401,34 @@ impl ThemeService {
         }
 
         Ok(themes)
+    }
+
+    pub async fn delete_theme(&self, theme_id: &str) -> Result<(), ThemeDeleteError> {
+        if !is_valid_theme_id(theme_id) {
+            return Err(ThemeDeleteError::InvalidThemeId);
+        }
+        if self.state.read().await.current_settings.current == theme_id {
+            return Err(ThemeDeleteError::ActiveTheme);
+        }
+
+        let theme_directory =
+            installed_themes_directory(&self.dep_app_cfg.asset_dir).join(theme_id);
+        let metadata =
+            fs::symlink_metadata(&theme_directory).map_err(|error| match error.kind() {
+                io::ErrorKind::NotFound => ThemeDeleteError::NotFound,
+                _ => ThemeDeleteError::Io(error),
+            })?;
+        if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+            return Err(ThemeDeleteError::NotFound);
+        }
+
+        fs::remove_dir_all(&theme_directory)?;
+        let config_path = theme_config_path(&self.dep_app_cfg.asset_dir, theme_id);
+        match fs::remove_file(config_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(ThemeDeleteError::Io(error)),
+        }
     }
 
     pub async fn list_theme_details(&self) -> Result<Vec<ThemeDetails>, io::Error> {
@@ -800,6 +831,21 @@ pub enum ThemeError {
     InvalidRenderContext,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ThemeDeleteError {
+    #[error("Invalid theme identifier")]
+    InvalidThemeId,
+
+    #[error("The active theme cannot be deleted")]
+    ActiveTheme,
+
+    #[error("Theme not found")]
+    NotFound,
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -815,8 +861,8 @@ mod tests {
     use crate::service::site_settings::SiteSettingsService;
 
     use super::{
-        ThemeInstallError, ThemeLoader, ThemeService, ThemeServiceSettings, absolute_url,
-        format_date, format_rfc2822, install_theme_archive, is_safe_relative_path,
+        ThemeDeleteError, ThemeInstallError, ThemeLoader, ThemeService, ThemeServiceSettings,
+        absolute_url, format_date, format_rfc2822, install_theme_archive, is_safe_relative_path,
         read_theme_config_file, read_theme_translations, select_translation, theme_static_url,
         url_encode, write_theme_config_file,
     };
@@ -1061,5 +1107,55 @@ mod tests {
         assert!(journal.active);
         assert_eq!(journal.name.as_deref(), Some("Journal"));
         assert_eq!(journal.version.as_deref(), Some("0.1.0"));
+    }
+
+    #[tokio::test]
+    async fn deletes_an_inactive_theme_and_its_configuration() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let asset_dir = temporary_directory.path().to_path_buf();
+        let theme_directory = asset_dir.join("themes/installed/notes");
+        std::fs::create_dir_all(&theme_directory).unwrap();
+        std::fs::write(theme_directory.join("manifest.toml"), "name = 'Notes'\n").unwrap();
+        let config_path = asset_dir.join("themes/config/notes.json");
+        std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        std::fs::write(&config_path, "{}").unwrap();
+        let config = Arc::new(ApplicationConfiguration {
+            listen_addr: "127.0.0.1:0".to_string(),
+            database: "sqlite::memory:".to_string(),
+            raw_asset_dir: asset_dir.to_string_lossy().to_string(),
+            asset_dir,
+        });
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        let service =
+            ThemeService::new(database.clone(), config, SiteSettingsService::new(database));
+
+        service.delete_theme("notes").await.unwrap();
+
+        assert!(!theme_directory.exists());
+        assert!(!config_path.exists());
+    }
+
+    #[tokio::test]
+    async fn refuses_to_delete_active_or_invalid_theme_ids() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let asset_dir = temporary_directory.path().to_path_buf();
+        let config = Arc::new(ApplicationConfiguration {
+            listen_addr: "127.0.0.1:0".to_string(),
+            database: "sqlite::memory:".to_string(),
+            raw_asset_dir: asset_dir.to_string_lossy().to_string(),
+            asset_dir,
+        });
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        let service =
+            ThemeService::new(database.clone(), config, SiteSettingsService::new(database));
+
+        assert!(matches!(
+            service.delete_theme("default").await,
+            Err(ThemeDeleteError::ActiveTheme)
+        ));
+        assert!(matches!(
+            service.delete_theme("../outside").await,
+            Err(ThemeDeleteError::InvalidThemeId)
+        ));
     }
 }

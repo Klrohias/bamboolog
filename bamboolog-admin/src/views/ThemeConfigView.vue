@@ -71,7 +71,7 @@
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { settingsApi, type ThemeConfigField, type ThemeConfigValue, type ThemeConfiguration } from '@/api/settings'
+import { themesApi, type ThemeConfigField, type ThemeConfigValue, type ThemeConfiguration } from '@/api/themes'
 
 const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vue'))
 
@@ -145,7 +145,7 @@ function applyJsonValue() {
 async function loadConfiguration() {
   loading.value = true
   try {
-    const { data } = await settingsApi.getActiveThemeConfig()
+    const { data } = await themesApi.getActiveConfig()
     configuration.value = data.data
     values.value = { ...(data.data?.values || {}) }
   } catch {
@@ -158,7 +158,7 @@ async function loadConfiguration() {
 async function save() {
   saving.value = true
   try {
-    const { data } = await settingsApi.updateActiveThemeConfig(values.value)
+    const { data } = await themesApi.updateActiveConfig(values.value)
     configuration.value = data.data
     values.value = { ...(data.data?.values || {}) }
     message.success(t('theme_config.save_success'))

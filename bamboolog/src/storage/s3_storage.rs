@@ -6,6 +6,8 @@ use aws_sdk_s3::{
     config::{Builder as S3ConfigBuilder, Region},
     primitives::ByteStream,
 };
+use axum::body::Body;
+use tokio_util::io::ReaderStream;
 
 use super::{AttachmentStorage, S3StorageConfig, StorageError, StorageResult, StoredObject};
 
@@ -70,13 +72,13 @@ impl S3StorageProvider {
 
 #[async_trait]
 impl AttachmentStorage for S3StorageProvider {
-    async fn put(&self, key: &str, bytes: &[u8], mime: &str) -> StorageResult<()> {
+    async fn put(&self, key: &str, bytes: Vec<u8>, mime: &str) -> StorageResult<()> {
         self.client
             .put_object()
             .bucket(&self.bucket)
             .key(self.object_key(key))
             .content_type(mime)
-            .body(ByteStream::from(bytes.to_vec()))
+            .body(ByteStream::from(bytes))
             .send()
             .await
             .map_err(|e| StorageError::Other(anyhow::anyhow!(e)))?;
@@ -94,15 +96,10 @@ impl AttachmentStorage for S3StorageProvider {
             .map_err(|e| StorageError::Other(anyhow::anyhow!(e)))?;
 
         let mime = output.content_type().map(ToOwned::to_owned);
-        let bytes = output
-            .body
-            .collect()
-            .await
-            .map_err(|e| StorageError::Other(anyhow::anyhow!(e)))?
-            .into_bytes()
-            .to_vec();
-
-        Ok(StoredObject { bytes, mime })
+        Ok(StoredObject {
+            body: Body::from_stream(ReaderStream::new(output.body.into_async_read())),
+            mime,
+        })
     }
 
     async fn delete(&self, key: &str) -> StorageResult<()> {

@@ -1,6 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
+use axum::body::Body;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -24,15 +25,14 @@ pub enum StorageError {
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
-#[derive(Debug, Clone)]
 pub struct StoredObject {
-    pub bytes: Vec<u8>,
+    pub body: Body,
     pub mime: Option<String>,
 }
 
 #[async_trait]
 pub trait AttachmentStorage: Send + Sync {
-    async fn put(&self, key: &str, bytes: &[u8], mime: &str) -> StorageResult<()>;
+    async fn put(&self, key: &str, bytes: Vec<u8>, mime: &str) -> StorageResult<()>;
     async fn get(&self, key: &str) -> StorageResult<StoredObject>;
     async fn delete(&self, key: &str) -> StorageResult<()>;
 }
@@ -130,17 +130,17 @@ pub fn validate_storage_engine_config(
 pub async fn create_storage_provider(
     app_config: Arc<ApplicationConfiguration>,
     engine: &storage_engine::Model,
-) -> StorageResult<Box<dyn AttachmentStorage>> {
+) -> StorageResult<Arc<dyn AttachmentStorage>> {
     match engine.kind.as_str() {
         "local" | "internal" => {
             let config = parse_local_config(engine.config_json.as_deref())?;
-            Ok(Box::new(LocalStorageProvider::new(
+            Ok(Arc::new(LocalStorageProvider::new(
                 config.root_path(&app_config),
             )))
         }
         "s3" => {
             let config = parse_s3_config(engine.config_json.as_deref())?;
-            Ok(Box::new(S3StorageProvider::new(config).await?))
+            Ok(Arc::new(S3StorageProvider::new(config).await?))
         }
         other => Err(StorageError::UnsupportedType(other.to_string())),
     }
