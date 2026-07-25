@@ -129,18 +129,23 @@ async function activate(theme: ThemeDetails) {
   }
 }
 
-function validateUpload(file: UploadFileInfo) {
-  const isZip = file.name.toLowerCase().endsWith('.zip')
-  const isWithinLimit = (file.file?.size || 0) <= 15 * 1024 * 1024
+function validateThemeArchive(file: UploadFileInfo) {
+  const name = file.file?.name ?? file.name ?? ''
+  const isZip = name.toLowerCase().endsWith('.zip')
+  const isWithinLimit = file.file !== null && file.file !== undefined && file.file.size <= 15 * 1024 * 1024
   if (!isZip) message.error(t('themes.upload_zip_only'))
   else if (!isWithinLimit) message.error(t('themes.upload_too_large'))
   return isZip && isWithinLimit
 }
 
+function validateUpload({ file }: { file: UploadFileInfo }) {
+  return validateThemeArchive(file)
+}
+
 async function uploadTheme() {
   const selectedFile = uploadFiles.value[0]
   const file = selectedFile?.file
-  if (!selectedFile || !file || !validateUpload(selectedFile)) return
+  if (!selectedFile || !file || !validateThemeArchive(selectedFile)) return
   uploading.value = true
   try {
     await settingsApi.uploadTheme(file)
