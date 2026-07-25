@@ -31,6 +31,11 @@ export interface PostListParams {
     name?: string
 }
 
+export type PostWriteRequest = Omit<Partial<Post>, 'created_at' | 'updated_at'> & {
+    created_at?: number
+    updated_at?: number
+}
+
 export const postsApi = {
     list: (params: PostListParams) => {
         return api.get<ApiResponse<PostListResponse>>('/posts/', { params })
@@ -40,11 +45,11 @@ export const postsApi = {
         return api.get<ApiResponse<Post>>(`/posts/${id}`)
     },
 
-    create: (data: Partial<Post>) => {
-        return api.put<ApiResponse<Post>>('/posts/', data)
+    create: (data: PostWriteRequest) => {
+      return api.put<ApiResponse<Post>>('/posts/', data)
     },
 
-    update: (id: number, data: Partial<Post>) => {
+    update: (id: number, data: PostWriteRequest) => {
         return api.post<ApiResponse<Post>>(`/posts/${id}`, data)
     },
 

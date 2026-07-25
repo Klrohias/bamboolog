@@ -114,20 +114,49 @@ const storageEngineOptions = computed(() =>
     .map(engine => ({ label: engine.name, value: engine.id }))
 )
 
-const form = ref({
-  title: '',
-  name: '',
-  content: '',
-  description: '',
-  illustration: '',
-  categories: [] as string[],
-  tags: [] as string[],
-  hidden: false
-})
+interface PostForm {
+  title: string
+  name: string
+  content: string
+  created_at: number | null
+  updated_at: number | null
+  description: string
+  illustration: string
+  categories: string[]
+  tags: string[]
+  hidden: boolean
+}
+
+function createEmptyForm(): PostForm {
+  const now = Date.now()
+  return {
+    title: '',
+    name: '',
+    content: '',
+    created_at: now,
+    updated_at: now,
+    description: '',
+    illustration: '',
+    categories: [] as string[],
+    tags: [] as string[],
+    hidden: false
+  }
+}
+
+function toDatePickerValue(value: string | null | undefined) {
+  const timestamp = value ? Date.parse(value) : Number.NaN
+  return Number.isNaN(timestamp) ? null : timestamp
+}
+
+function toUnixSeconds(value: number | null) {
+  return value === null ? undefined : Math.floor(value / 1000)
+}
+
+const form = ref<PostForm>(createEmptyForm())
 
 async function fetchPost() {
   editorReady.value = false
-  form.value = { title: '', name: '', content: '', description: '', illustration: '', categories: [], tags: [], hidden: false }
+  form.value = createEmptyForm()
   if (!isEdit.value) {
     editorReady.value = true
     return
@@ -136,14 +165,18 @@ async function fetchPost() {
   try {
     const { data } = await postsApi.get(Number(route.params.id))
     const post = data.data
-    form.value.title = post.title
-    form.value.name = post.name
-    form.value.content = post.content
-    form.value.description = post.description || ''
-    form.value.illustration = post.illustration || ''
-    form.value.categories = post.categories || []
-    form.value.tags = post.tags || []
-    form.value.hidden = post.hidden || false
+    form.value = {
+      title: post.title,
+      name: post.name,
+      content: post.content,
+      created_at: toDatePickerValue(post.created_at),
+      updated_at: toDatePickerValue(post.updated_at),
+      description: post.description || '',
+      illustration: post.illustration || '',
+      categories: post.categories || [],
+      tags: post.tags || [],
+      hidden: post.hidden || false
+    }
   } catch (e: any) {
     message.error(t('posts.fetch_failed'))
     router.push('/posts')
@@ -184,11 +217,16 @@ async function handleSave() {
 
   saving.value = true
   try {
+    const payload = {
+      ...form.value,
+      created_at: toUnixSeconds(form.value.created_at),
+      updated_at: toUnixSeconds(form.value.updated_at)
+    }
     if (isEdit.value) {
-      await postsApi.update(Number(route.params.id), form.value)
+      await postsApi.update(Number(route.params.id), payload)
       message.success(t('posts.update_success'))
     } else {
-      await postsApi.create(form.value)
+      await postsApi.create(payload)
       message.success(t('posts.create_success'))
     }
     router.push('/posts')

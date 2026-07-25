@@ -39,6 +39,7 @@
         "slug": "别名",
         "status": "状态",
         "created_at": "创建时间",
+        "updated_at": "更新时间",
         "actions": "操作",
         "new_post": "新文章",
         "edit_post": "编辑文章",

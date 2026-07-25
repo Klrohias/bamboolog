@@ -39,6 +39,7 @@
         "slug": "Slug",
         "status": "Status",
         "created_at": "Created At",
+        "updated_at": "Updated At",
         "actions": "Actions",
         "new_post": "New Post",
         "edit_post": "Edit Post",

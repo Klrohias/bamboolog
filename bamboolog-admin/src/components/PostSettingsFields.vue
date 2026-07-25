@@ -2,6 +2,12 @@
   <n-form-item :label="$t('posts.slug')" path="name">
     <n-input v-model:value="model.name" :placeholder="$t('posts.slug')" />
   </n-form-item>
+  <n-form-item :label="$t('posts.created_at')">
+    <n-date-picker v-model:value="model.created_at" type="datetime" style="width: 100%" />
+  </n-form-item>
+  <n-form-item :label="$t('posts.updated_at')">
+    <n-date-picker v-model:value="model.updated_at" type="datetime" style="width: 100%" />
+  </n-form-item>
   <n-form-item :label="$t('posts.description')">
     <n-input v-model:value="model.description" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }"
       :placeholder="$t('posts.description_placeholder')" />
@@ -27,6 +33,8 @@
 <script setup lang="ts">
 export interface PostSettingsForm {
   name: string
+  created_at: number | null
+  updated_at: number | null
   description: string
   illustration: string
   categories: string[]

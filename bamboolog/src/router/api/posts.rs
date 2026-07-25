@@ -25,6 +25,7 @@ pub struct PostCreateRequest {
     pub name: String,
     pub content: String,
     pub created_at: Option<i64>,
+    pub updated_at: Option<i64>,
     pub description: Option<String>,
     pub illustration: Option<String>,
     pub tags: Option<Vec<String>>,
@@ -38,6 +39,7 @@ pub struct PostUpdateRequest {
     pub name: Option<String>,
     pub content: Option<String>,
     pub created_at: Option<i64>,
+    pub updated_at: Option<i64>,
     pub description: Option<String>,
     pub illustration: Option<String>,
     pub tags: Option<Vec<String>>,
@@ -230,6 +232,10 @@ pub async fn create_post(
         .created_at
         .and_then(DateTimeUtc::from_timestamp_secs)
         .unwrap_or_else(Utc::now);
+    let updated_at = post_payload
+        .updated_at
+        .and_then(DateTimeUtc::from_timestamp_secs)
+        .unwrap_or_else(|| created_at.clone());
     let active_model = entity::post::ActiveModel {
         id: ActiveValue::NotSet,
         name: ActiveValue::Set(post_payload.name),
@@ -244,7 +250,7 @@ pub async fn create_post(
         ))),
         hidden: ActiveValue::Set(Some(post_payload.hidden.unwrap_or(false))),
         created_at: ActiveValue::Set(created_at.clone()),
-        updated_at: ActiveValue::Set(Some(created_at)),
+        updated_at: ActiveValue::Set(Some(updated_at)),
     };
 
     active_model
@@ -309,7 +315,12 @@ pub async fn edit_post(
         active_model.hidden = ActiveValue::Set(Some(hidden));
     }
 
-    active_model.updated_at = ActiveValue::Set(Some(Utc::now()));
+    active_model.updated_at = ActiveValue::Set(Some(
+        post_payload
+            .updated_at
+            .and_then(DateTimeUtc::from_timestamp_secs)
+            .unwrap_or_else(Utc::now),
+    ));
 
     active_model
         .update(&database)
@@ -474,6 +485,8 @@ mod tests {
             "tags": ["Rust", "Web"],
             "categories": ["Engineering"],
             "hidden": true,
+            "created_at": 1700000000,
+            "updated_at": 1700000100,
             "user": 999,
         }))
         .unwrap();
@@ -493,7 +506,8 @@ mod tests {
         assert_eq!(deserialize_terms(post.tags), ["Rust", "Web"]);
         assert_eq!(deserialize_terms(post.categories), ["Engineering"]);
         assert_eq!(post.hidden, Some(true));
-        assert!(post.updated_at.is_some());
+        assert_eq!(post.created_at.timestamp(), 1_700_000_000);
+        assert_eq!(post.updated_at.unwrap().timestamp(), 1_700_000_100);
     }
 
     #[test]
