@@ -19,6 +19,7 @@
           :data="posts"
           :loading="loading"
           :pagination="pagination"
+          :scroll-x="960"
           @update:page="handlePageChange"
           @update:page-size="handlePageSizeChange"
           @update:sorter="handleSorterChange"
@@ -176,4 +177,3 @@ async function handleDelete(id: number) {
 
 onMounted(fetchPosts)
 </script>
-

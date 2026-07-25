@@ -28,7 +28,7 @@
         </n-space>
       </template>
 
-      <n-data-table remote :columns="columns" :data="attachments" :loading="loading" :pagination="pagination"
+      <n-data-table remote :columns="columns" :data="attachments" :loading="loading" :pagination="pagination" :scroll-x="1080"
         @update:page="handlePageChange" @update:sorter="handleSorterChange" />
     </n-card>
 

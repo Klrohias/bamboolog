@@ -8,7 +8,7 @@
         </n-button>
       </template>
 
-      <n-data-table :columns="columns" :data="engines" :loading="loading" :pagination="false" />
+      <n-data-table :columns="columns" :data="engines" :loading="loading" :pagination="false" :scroll-x="960" />
     </n-card>
 
     <n-modal v-model:show="showModal" preset="card" :title="editingId ? t('storage_engine.edit') : t('storage_engine.create')" style="width: min(720px, calc(100vw - 32px))">
