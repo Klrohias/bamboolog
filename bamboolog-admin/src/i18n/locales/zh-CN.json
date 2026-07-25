@@ -101,7 +101,15 @@
         "empty": "没有可用主题",
         "fetch_failed": "加载主题失败",
         "activate_success": "主题已启用",
-        "activate_failed": "启用主题失败"
+        "activate_failed": "启用主题失败",
+        "upload": "上传主题",
+        "upload_title": "上传主题包",
+        "upload_hint": "拖拽 ZIP 主题包到此处，或点击选择文件",
+        "upload_limit": "仅支持最大 15 MB 的 ZIP 压缩包",
+        "upload_zip_only": "请选择 ZIP 压缩包",
+        "upload_too_large": "主题压缩包不能超过 15 MB",
+        "upload_success": "主题上传成功",
+        "upload_failed": "主题上传失败"
     },
     "theme_config": {
         "title": "主题配置",

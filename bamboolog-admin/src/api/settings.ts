@@ -59,6 +59,14 @@ export const settingsApi = {
         return api.get<ApiResponse<ThemeDetails[]>>('/settings/themes')
     },
 
+    uploadTheme: (file: File) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return api.post<ApiResponse<ThemeDetails>>('/settings/themes', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+    },
+
     activateTheme: (theme: string) => {
         return api.post<ApiResponse<{ current: string }>>(`/settings/themes/${encodeURIComponent(theme)}/activate`)
     },

@@ -101,7 +101,15 @@
         "empty": "No themes are available",
         "fetch_failed": "Failed to load themes",
         "activate_success": "Theme activated",
-        "activate_failed": "Failed to activate theme"
+        "activate_failed": "Failed to activate theme",
+        "upload": "Upload theme",
+        "upload_title": "Upload theme package",
+        "upload_hint": "Drag a ZIP theme package here, or click to select one",
+        "upload_limit": "ZIP archives up to 15 MB",
+        "upload_zip_only": "Select a ZIP archive",
+        "upload_too_large": "Theme archive must not exceed 15 MB",
+        "upload_success": "Theme uploaded",
+        "upload_failed": "Failed to upload theme"
     },
     "theme_config": {
         "title": "Theme Configuration",

@@ -1,5 +1,6 @@
 use std::{
-    fs, io,
+    fs,
+    io::{self, Cursor},
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
@@ -17,6 +18,7 @@ use tokio::fs::File;
 use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
 use tracing::instrument;
+use zip::ZipArchive;
 
 use crate::config::{
     ApplicationConfiguration, ThemeConfigError, ThemeConfigField, ThemeManifest, config_entries,
@@ -86,6 +88,164 @@ fn theme_config_path(asset_dir: &Path, theme_id: &str) -> PathBuf {
         .join("themes")
         .join("config")
         .join(format!("{theme_id}.json"))
+}
+
+const REQUIRED_LAYOUTS: [&str; 6] = ["home", "post", "archive", "terms", "taxonomy", "not-found"];
+const MAX_THEME_EXTRACTED_SIZE: u64 = 100 * 1024 * 1024;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ThemeInstallError {
+    #[error("Invalid theme archive: {0}")]
+    InvalidArchive(String),
+    #[error("Theme `{0}` is already installed")]
+    AlreadyInstalled(String),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+pub fn install_theme_archive(
+    asset_dir: &Path,
+    archive: &[u8],
+) -> Result<ThemeDetails, ThemeInstallError> {
+    let mut archive = ZipArchive::new(Cursor::new(archive))
+        .map_err(|error| ThemeInstallError::InvalidArchive(error.to_string()))?;
+    let theme_id = archive_theme_id(&mut archive)?;
+    let installed_directory = installed_themes_directory(asset_dir);
+    fs::create_dir_all(&installed_directory)?;
+    let destination = installed_directory.join(&theme_id);
+    if destination.exists() {
+        return Err(ThemeInstallError::AlreadyInstalled(theme_id));
+    }
+
+    let temporary_directory = tempfile::Builder::new()
+        .prefix(".theme-upload-")
+        .tempdir_in(&installed_directory)?;
+    let theme_directory = temporary_directory.path().join(&theme_id);
+    fs::create_dir(&theme_directory)?;
+    let mut extracted_size: u64 = 0;
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| ThemeInstallError::InvalidArchive(error.to_string()))?;
+        if entry.is_symlink() {
+            return Err(ThemeInstallError::InvalidArchive(
+                "symbolic links are not allowed".to_string(),
+            ));
+        }
+        extracted_size = extracted_size.saturating_add(entry.size());
+        if extracted_size > MAX_THEME_EXTRACTED_SIZE {
+            return Err(ThemeInstallError::InvalidArchive(
+                "extracted theme files must not exceed 100 MB".to_string(),
+            ));
+        }
+        let entry_path = Path::new(entry.name());
+        let mut components = entry_path.components();
+        let Some(Component::Normal(root)) = components.next() else {
+            return Err(ThemeInstallError::InvalidArchive(
+                "all entries must be inside one theme directory".to_string(),
+            ));
+        };
+        if root != std::ffi::OsStr::new(&theme_id)
+            || !components.all(|component| matches!(component, Component::Normal(_)))
+        {
+            return Err(ThemeInstallError::InvalidArchive(
+                "archive contains an unsafe or unexpected path".to_string(),
+            ));
+        }
+        let relative_path = entry_path.strip_prefix(&theme_id).expect("validated root");
+        if relative_path.as_os_str().is_empty() {
+            continue;
+        }
+        let destination = theme_directory.join(relative_path);
+        if entry.is_dir() {
+            fs::create_dir_all(destination)?;
+        } else {
+            let parent = destination.parent().expect("relative file has a parent");
+            fs::create_dir_all(parent)?;
+            let mut output = fs::File::create(destination)?;
+            io::copy(&mut entry, &mut output)?;
+        }
+    }
+
+    let manifest = validate_theme_directory(&theme_directory)?;
+    fs::rename(&theme_directory, &destination)?;
+
+    Ok(ThemeDetails {
+        id: theme_id,
+        active: false,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        homepage: manifest.homepage,
+        author: manifest.author,
+    })
+}
+
+fn archive_theme_id(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<String, ThemeInstallError> {
+    let mut theme_id = None;
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| ThemeInstallError::InvalidArchive(error.to_string()))?;
+        let mut components = Path::new(entry.name()).components();
+        let Some(Component::Normal(root)) = components.next() else {
+            return Err(ThemeInstallError::InvalidArchive(
+                "all entries must be inside one theme directory".to_string(),
+            ));
+        };
+        if !is_valid_theme_id(root) {
+            return Err(ThemeInstallError::InvalidArchive(
+                "theme directory name must contain only letters, numbers, hyphens, or underscores"
+                    .to_string(),
+            ));
+        }
+        match &theme_id {
+            Some(existing) if existing != &root.to_string_lossy() => {
+                return Err(ThemeInstallError::InvalidArchive(
+                    "archive must contain exactly one theme directory".to_string(),
+                ));
+            }
+            None => theme_id = Some(root.to_string_lossy().into_owned()),
+            _ => {}
+        }
+    }
+    theme_id.ok_or_else(|| ThemeInstallError::InvalidArchive("archive is empty".to_string()))
+}
+
+fn is_valid_theme_id(theme_id: &std::ffi::OsStr) -> bool {
+    let Some(theme_id) = theme_id.to_str() else {
+        return false;
+    };
+    !theme_id.is_empty()
+        && theme_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn validate_theme_directory(theme_directory: &Path) -> Result<ThemeManifest, ThemeInstallError> {
+    let manifest_path = theme_directory.join("manifest.toml");
+    let manifest_contents = fs::read_to_string(&manifest_path).map_err(|error| {
+        ThemeInstallError::InvalidArchive(format!("missing or unreadable manifest.toml: {error}"))
+    })?;
+    let manifest: ThemeManifest = toml::from_str(&manifest_contents).map_err(|error| {
+        ThemeInstallError::InvalidArchive(format!("invalid manifest.toml: {error}"))
+    })?;
+    manifest
+        .validate_config_schema()
+        .map_err(|error| ThemeInstallError::InvalidArchive(error.to_string()))?;
+
+    for layout in REQUIRED_LAYOUTS {
+        let filename = manifest.map_layout_file(layout);
+        if !is_safe_relative_path(&filename)
+            || !theme_directory.join("layouts").join(&filename).is_file()
+        {
+            return Err(ThemeInstallError::InvalidArchive(format!(
+                "missing required layout: layouts/{filename}"
+            )));
+        }
+    }
+    Ok(manifest)
 }
 
 impl<'a> ThemeLoader<'a> {
@@ -642,19 +802,42 @@ pub enum ThemeError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        io::{Cursor, Write},
+        sync::Arc,
+    };
 
     use sea_orm::Database;
     use serde_json::json;
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     use crate::config::ApplicationConfiguration;
     use crate::service::site_settings::SiteSettingsService;
 
     use super::{
-        ThemeLoader, ThemeService, ThemeServiceSettings, absolute_url, format_date, format_rfc2822,
-        is_safe_relative_path, read_theme_config_file, read_theme_translations, select_translation,
-        theme_static_url, url_encode, write_theme_config_file,
+        ThemeInstallError, ThemeLoader, ThemeService, ThemeServiceSettings, absolute_url,
+        format_date, format_rfc2822, install_theme_archive, is_safe_relative_path,
+        read_theme_config_file, read_theme_translations, select_translation, theme_static_url,
+        url_encode, write_theme_config_file,
     };
+
+    fn theme_archive(theme_id: &str, include_all_layouts: bool) -> Vec<u8> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default();
+        writer
+            .start_file(format!("{theme_id}/manifest.toml"), options)
+            .unwrap();
+        writer.write_all(b"name = 'Uploaded theme'\n").unwrap();
+        for layout in ["home", "post", "archive", "terms", "taxonomy", "not-found"] {
+            if include_all_layouts || layout != "not-found" {
+                writer
+                    .start_file(format!("{theme_id}/layouts/{layout}"), options)
+                    .unwrap();
+                writer.write_all(b"{{ site.name }}").unwrap();
+            }
+        }
+        writer.finish().unwrap().into_inner()
+    }
 
     #[test]
     fn builds_static_urls_without_duplicate_slashes() {
@@ -791,6 +974,57 @@ mod tests {
         assert!(!is_safe_relative_path("../secret.html"));
         assert!(!is_safe_relative_path("/etc/passwd"));
         assert!(!is_safe_relative_path(""));
+    }
+
+    #[test]
+    fn installs_a_valid_theme_archive_into_the_installed_directory() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let theme =
+            install_theme_archive(temporary_directory.path(), &theme_archive("uploaded", true))
+                .unwrap();
+
+        assert_eq!(theme.id, "uploaded");
+        assert_eq!(theme.name.as_deref(), Some("Uploaded theme"));
+        assert!(
+            temporary_directory
+                .path()
+                .join("themes/installed/uploaded/manifest.toml")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn rejects_a_theme_archive_missing_a_required_layout() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let error = install_theme_archive(
+            temporary_directory.path(),
+            &theme_archive("incomplete", false),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(error, ThemeInstallError::InvalidArchive(message) if message.contains("not-found"))
+        );
+        assert!(
+            !temporary_directory
+                .path()
+                .join("themes/installed/incomplete")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn rejects_theme_archives_with_path_traversal_entries() {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file("uploaded/../outside", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"unsafe").unwrap();
+        let archive = writer.finish().unwrap().into_inner();
+
+        let error =
+            install_theme_archive(tempfile::tempdir().unwrap().path(), &archive).unwrap_err();
+        assert!(matches!(error, ThemeInstallError::InvalidArchive(_)));
     }
 
     #[tokio::test]

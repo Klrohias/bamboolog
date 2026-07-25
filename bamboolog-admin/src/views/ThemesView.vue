@@ -1,6 +1,10 @@
 <template>
   <n-space vertical size="large">
-    <n-page-header :title="$t('themes.title')" :subtitle="$t('themes.subtitle')" />
+    <n-page-header :title="$t('themes.title')" :subtitle="$t('themes.subtitle')">
+      <template #extra>
+        <n-button type="primary" @click="uploadVisible = true">{{ $t('themes.upload') }}</n-button>
+      </template>
+    </n-page-header>
 
     <n-spin :show="loading">
       <n-grid v-if="themes.length" cols="1 s:2 l:3" :x-gap="16" :y-gap="16" responsive="screen">
@@ -41,12 +45,40 @@
         <n-descriptions-item v-if="selectedTheme.homepage" :label="$t('themes.homepage')"><a :href="selectedTheme.homepage" target="_blank" rel="noreferrer">{{ selectedTheme.homepage }}</a></n-descriptions-item>
       </n-descriptions>
     </n-modal>
+
+    <n-modal v-model:show="uploadVisible" preset="card" :title="$t('themes.upload_title')" style="width: min(560px, calc(100vw - 32px))" :mask-closable="!uploading" :closable="!uploading">
+      <n-upload
+        v-model:file-list="uploadFiles"
+        :default-upload="false"
+        :max="1"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        :disabled="uploading"
+        :on-before-upload="validateUpload"
+      >
+        <n-upload-dragger>
+          <div class="upload-icon">
+            <n-icon size="48" :depth="3">
+              <ArchiveOutline />
+            </n-icon>
+          </div>
+          <div class="upload-text">{{ $t('themes.upload_hint') }}</div>
+          <div class="upload-help">{{ $t('themes.upload_limit') }}</div>
+        </n-upload-dragger>
+      </n-upload>
+      <template #footer>
+        <n-space justify="end">
+          <n-button :disabled="uploading" @click="uploadVisible = false">{{ $t('common.cancel') }}</n-button>
+          <n-button type="primary" :loading="uploading" :disabled="uploadFiles.length !== 1" @click="uploadTheme">{{ $t('common.confirm') }}</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </n-space>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { useMessage, type UploadFileInfo } from 'naive-ui'
+import { ArchiveOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { settingsApi, type ThemeDetails } from '@/api/settings'
@@ -59,6 +91,9 @@ const loading = ref(false)
 const activating = ref<string | null>(null)
 const detailsVisible = ref(false)
 const selectedTheme = ref<ThemeDetails | null>(null)
+const uploadVisible = ref(false)
+const uploading = ref(false)
+const uploadFiles = ref<UploadFileInfo[]>([])
 
 function displayName(theme: ThemeDetails) {
   return theme.name || theme.id
@@ -94,6 +129,32 @@ async function activate(theme: ThemeDetails) {
   }
 }
 
+function validateUpload(file: UploadFileInfo) {
+  const isZip = file.name.toLowerCase().endsWith('.zip')
+  const isWithinLimit = (file.file?.size || 0) <= 15 * 1024 * 1024
+  if (!isZip) message.error(t('themes.upload_zip_only'))
+  else if (!isWithinLimit) message.error(t('themes.upload_too_large'))
+  return isZip && isWithinLimit
+}
+
+async function uploadTheme() {
+  const selectedFile = uploadFiles.value[0]
+  const file = selectedFile?.file
+  if (!selectedFile || !file || !validateUpload(selectedFile)) return
+  uploading.value = true
+  try {
+    await settingsApi.uploadTheme(file)
+    uploadVisible.value = false
+    uploadFiles.value = []
+    await fetchThemes()
+    message.success(t('themes.upload_success'))
+  } catch {
+    message.error(t('themes.upload_failed'))
+  } finally {
+    uploading.value = false
+  }
+}
+
 onMounted(fetchThemes)
 </script>
 
@@ -114,6 +175,20 @@ onMounted(fetchThemes)
 }
 
 .theme-meta {
+  color: var(--n-text-color-3);
+  font-size: 13px;
+}
+
+.upload-text {
+  font-size: 15px;
+}
+
+.upload-icon {
+  margin-bottom: 12px;
+}
+
+.upload-help {
+  margin-top: 8px;
   color: var(--n-text-color-3);
   font-size: 13px;
 }
