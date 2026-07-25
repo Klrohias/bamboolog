@@ -18,10 +18,10 @@ export interface Settings {
 
 export const settingsApi = {
     get: () => {
-        return api.get<ApiResponse<Settings>>('/settings/')
+        return api.get<ApiResponse<Settings>>('/settings')
     },
 
     update: (data: Settings) => {
-        return api.post<ApiResponse<Settings>>('/settings/', data)
+        return api.post<ApiResponse<Settings>>('/settings', data)
     }
 }

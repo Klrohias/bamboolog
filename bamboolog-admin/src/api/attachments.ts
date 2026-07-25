@@ -21,7 +21,7 @@ export interface AttachmentListResponse {
 
 export const attachmentApi = {
     list: (page: number = 1, size: number = 20, mime?: string, storage_engine_id?: number, sort?: string, order?: string) => {
-        return api.get<ApiResponse<AttachmentListResponse>>('/attachments/', {
+        return api.get<ApiResponse<AttachmentListResponse>>('/attachments', {
             params: { page, size, mime, storage_engine_id, sort, order }
         })
     },
@@ -32,7 +32,7 @@ export const attachmentApi = {
         if (storage_engine_id) {
             formData.append('storage_engine_id', storage_engine_id.toString())
         }
-        return api.post<ApiResponse<Attachment>>('/attachments/', formData, {
+        return api.post<ApiResponse<Attachment>>('/attachments', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data'
             }

@@ -12,11 +12,11 @@ export interface StorageEngine {
 
 export const storageApi = {
     list: () => {
-        return api.get<ApiResponse<StorageEngine[]>>('/storage_engines/')
+        return api.get<ApiResponse<StorageEngine[]>>('/storage_engines')
     },
 
     create: (data: Omit<StorageEngine, 'id'>) => {
-        return api.post<ApiResponse<StorageEngine>>('/storage_engines/', data)
+        return api.post<ApiResponse<StorageEngine>>('/storage_engines', data)
     },
 
     update: (id: number, data: Partial<Omit<StorageEngine, 'id'>>) => {

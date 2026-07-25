@@ -38,7 +38,7 @@ export type PostWriteRequest = Omit<Partial<Post>, 'created_at' | 'updated_at'> 
 
 export const postsApi = {
     list: (params: PostListParams) => {
-        return api.get<ApiResponse<PostListResponse>>('/posts/', { params })
+        return api.get<ApiResponse<PostListResponse>>('/posts', { params })
     },
 
     get: (id: number) => {
@@ -46,7 +46,7 @@ export const postsApi = {
     },
 
     create: (data: PostWriteRequest) => {
-      return api.put<ApiResponse<Post>>('/posts/', data)
+      return api.put<ApiResponse<Post>>('/posts', data)
     },
 
     update: (id: number, data: PostWriteRequest) => {
