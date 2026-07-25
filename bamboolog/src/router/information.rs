@@ -189,8 +189,6 @@ mod tests {
             author: 1,
             description: Some("A <description>".to_string()),
             illustration: None,
-            tags: None,
-            categories: None,
             hidden: Some(false),
             created_at: Utc::now(),
             updated_at: None,

@@ -11,7 +11,7 @@ chrono = "0.4.38"
 clap = { version = "4.5", features = ["derive"] }
 dotenvy = "0.15.7"
 jsonwebtoken = { version = "10.1.0", features = ["aws_lc_rs"] }
-sea-orm = { version = "2.0.0-rc.28", features = [
+sea-orm = { version = "2.0", features = [
     "runtime-tokio-rustls",
     "macros",
     "schema-sync",

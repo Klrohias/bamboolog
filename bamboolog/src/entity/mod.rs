@@ -1,5 +1,9 @@
 pub mod attachment;
+pub mod category;
 pub mod config_entry;
 pub mod post;
+pub mod post_category;
+pub mod post_tag;
 pub mod storage_engine;
+pub mod tag;
 pub mod user;

@@ -15,11 +15,15 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::instrument;
 
-use crate::service::storage::StorageService;
 use crate::{
     config::SiteSettings,
     entity::post::{Column as PostColumn, Entity as PostEntity, Model as Post},
-    service::{site_settings::SiteSettingsService, theme::ThemeService},
+    service::{
+        site_settings::SiteSettingsService,
+        storage::StorageService,
+        taxonomy::{PostTerms, TaxonomyKind, TaxonomyService},
+        theme::ThemeService,
+    },
     utils::{HttpFailibleOperationExts, Pagination, render_markdown},
 };
 
@@ -46,6 +50,11 @@ const LAYOUT_TAXONOMY: &str = "taxonomy";
 const LAYOUT_POST: &str = "post";
 const LAYOUT_NOT_FOUND: &str = "not-found";
 
+struct PostWithTerms {
+    post: Post,
+    terms: PostTerms,
+}
+
 pub fn get_routes() -> Router {
     Router::new()
         .route("/", get(display_home))
@@ -68,10 +77,11 @@ async fn display_archives(
     let site = site_settings.read().await.clone();
     let pagination = public_pagination(query.page, &site);
     let (total, posts) = paginated_visible_posts(&database, pagination).await?;
+    let posts = posts_with_terms(&database, posts).await?;
     let mut years = BTreeMap::<String, Vec<Value>>::new();
     for post in posts {
         years
-            .entry(post.created_at.format("%Y").to_string())
+            .entry(post.post.created_at.format("%Y").to_string())
             .or_default()
             .push(post_summary(&post));
     }
@@ -99,7 +109,7 @@ async fn display_tags(
     Extension(site_settings): Extension<SiteSettingsService>,
 ) -> Result<Html<String>, Response> {
     display_taxonomy(
-        "tags",
+        TaxonomyKind::Tag,
         "Tags",
         query,
         database,
@@ -116,7 +126,7 @@ async fn display_categories(
     Extension(site_settings): Extension<SiteSettingsService>,
 ) -> Result<Html<String>, Response> {
     display_taxonomy(
-        "categories",
+        TaxonomyKind::Category,
         "Categories",
         query,
         database,
@@ -134,7 +144,7 @@ async fn display_tag(
     Extension(site_settings): Extension<SiteSettingsService>,
 ) -> Result<Html<String>, Response> {
     display_taxonomy(
-        "tags",
+        TaxonomyKind::Tag,
         "Tags",
         TaxonomyQuery {
             name: Some(term),
@@ -155,7 +165,7 @@ async fn display_category(
     Extension(site_settings): Extension<SiteSettingsService>,
 ) -> Result<Html<String>, Response> {
     display_taxonomy(
-        "categories",
+        TaxonomyKind::Category,
         "Categories",
         TaxonomyQuery {
             name: Some(term),
@@ -169,33 +179,37 @@ async fn display_category(
 }
 
 async fn display_taxonomy(
-    field: &str,
+    kind: TaxonomyKind,
     title: &str,
     query: TaxonomyQuery,
     database: DatabaseConnection,
     theme_service: ThemeService,
     site_settings: SiteSettingsService,
 ) -> Result<Html<String>, Response> {
-    let posts = visible_posts(&database).await?;
     let selected = query.name.filter(|name| !name.trim().is_empty());
     let site = site_settings.read().await.clone();
+    let field = kind.path_segment();
 
     if let Some(selected) = selected {
         let path = format!("/{field}/{}", encode_query_component(&selected));
-        let posts = posts
-            .into_iter()
-            .filter(|post| {
-                taxonomy_terms(post, field)
-                    .iter()
-                    .any(|term| term == &selected)
-            })
-            .collect::<Vec<_>>();
         let pagination = public_pagination(query.page, &site);
-        let total = posts.len() as u64;
-        let posts = page_posts(posts, pagination)
-            .iter()
-            .map(post_summary)
-            .collect::<Vec<_>>();
+        let paginator = TaxonomyService::visible_posts_for_term(kind, &selected)
+            .paginate(&database, pagination.size());
+        let total = paginator
+            .num_items()
+            .await
+            .traced_and_response(|e| tracing::error!("{}", e))?;
+        let posts = posts_with_terms(
+            &database,
+            paginator
+                .fetch_page(pagination.offset())
+                .await
+                .traced_and_response(|e| tracing::error!("{}", e))?,
+        )
+        .await?
+        .iter()
+        .map(post_summary)
+        .collect::<Vec<_>>();
         return Ok(Html(
             theme_service
                 .render(
@@ -213,12 +227,9 @@ async fn display_taxonomy(
         ));
     }
 
-    let mut counts = BTreeMap::<String, u64>::new();
-    for post in &posts {
-        for term in taxonomy_terms(post, field) {
-            *counts.entry(term).or_default() += 1;
-        }
-    }
+    let counts = TaxonomyService::visible_term_counts(&database, kind)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
     Ok(Html(
         theme_service
             .render(
@@ -244,6 +255,7 @@ async fn display_home(
     let site = site_settings.read().await.clone();
     let pagination = public_pagination(query.page, &site);
     let (total, posts) = paginated_visible_posts(&database, pagination).await?;
+    let posts = posts_with_terms(&database, posts).await?;
 
     Ok(Html(
         theme_service
@@ -314,6 +326,11 @@ async fn display_post(
         return Err((StatusCode::NOT_FOUND, Html(content)).into_response());
     }
 
+    let post_with_terms = posts_with_terms(&database, vec![post.clone()])
+        .await?
+        .pop()
+        .expect("a post always has a term context");
+
     // Render markdown
     let rendered_content =
         render_markdown(&post.content).traced_and_response(|e| tracing::error!("{}", e))?;
@@ -335,6 +352,25 @@ async fn display_post(
         .traced_and_response(|e| tracing::error!("{}", e))?;
 
     // Render jinja
+    let related_posts = posts_with_terms(
+        &database,
+        [newer_post.clone(), older_post.clone()]
+            .into_iter()
+            .flatten()
+            .collect(),
+    )
+    .await?;
+    let newer_post = related_posts.iter().find(|candidate| {
+        newer_post
+            .as_ref()
+            .is_some_and(|post| candidate.post.id == post.id)
+    });
+    let older_post = related_posts.iter().find(|candidate| {
+        older_post
+            .as_ref()
+            .is_some_and(|post| candidate.post.id == post.id)
+    });
+
     Ok(Html(
         theme_service
             .render(
@@ -343,9 +379,9 @@ async fn display_post(
                     "site": site_context(&site),
                     "page": { "kind": "post", "title": post.title, "description": post.description.clone().unwrap_or_else(|| excerpt(&post.content, 240)), "illustration": post.illustration.clone(), "url": post_url(&post) },
                     "content": rendered_content,
-                    "post": post_detail(&post),
-                    "newer_post": newer_post.as_ref().map(post_summary),
-                    "older_post": older_post.as_ref().map(post_summary),
+                    "post": post_detail(&post_with_terms),
+                    "newer_post": newer_post.map(post_summary),
+                    "older_post": older_post.map(post_summary),
                 }),
             )
             .await
@@ -385,16 +421,6 @@ fn pagination_context(pagination: Pagination, total: u64, path: &str) -> Value {
     })
 }
 
-fn page_posts(posts: Vec<Post>, pagination: Pagination) -> Vec<Post> {
-    let offset = pagination.offset().saturating_mul(pagination.size());
-    let offset = usize::try_from(offset).unwrap_or(usize::MAX);
-    posts
-        .into_iter()
-        .skip(offset)
-        .take(pagination.size() as usize)
-        .collect()
-}
-
 fn encode_query_component(value: &str) -> String {
     value
         .bytes()
@@ -411,7 +437,8 @@ fn post_url(post: &Post) -> String {
     format!("/posts/{}", post.name)
 }
 
-fn post_summary(post: &Post) -> Value {
+fn post_summary(context: &PostWithTerms) -> Value {
+    let post = &context.post;
     json!({
         "id": post.id,
         "name": post.name,
@@ -425,31 +452,9 @@ fn post_summary(post: &Post) -> Value {
         "summary": post.description.clone().filter(|description| !description.is_empty()).unwrap_or_else(|| excerpt(&post.content, 240)),
         "reading_minutes": reading_minutes(&post.content),
         "illustration": post.illustration,
-        "tags": terms(&post.tags),
-        "categories": terms(&post.categories),
+        "tags": context.terms.tags,
+        "categories": context.terms.categories,
     })
-}
-
-fn terms(value: &Option<String>) -> Vec<String> {
-    value
-        .as_deref()
-        .and_then(|value| serde_json::from_str(value).ok())
-        .unwrap_or_default()
-}
-
-fn taxonomy_terms(post: &Post, field: &str) -> Vec<String> {
-    match field {
-        "tags" => terms(&post.tags),
-        "categories" => terms(&post.categories),
-        _ => Vec::new(),
-    }
-}
-
-async fn visible_posts(database: &DatabaseConnection) -> Result<Vec<Post>, Response> {
-    visible_posts_query()
-        .all(database)
-        .await
-        .traced_and_response(|e| tracing::error!("{}", e))
 }
 
 fn visible_posts_query() -> sea_orm::Select<PostEntity> {
@@ -478,10 +483,27 @@ async fn paginated_visible_posts(
     Ok((total, posts))
 }
 
-fn post_detail(post: &Post) -> Value {
+fn post_detail(post: &PostWithTerms) -> Value {
     let mut result = post_summary(post);
-    result["content"] = Value::String(post.content.clone());
+    result["content"] = Value::String(post.post.content.clone());
     result
+}
+
+async fn posts_with_terms(
+    database: &DatabaseConnection,
+    posts: Vec<Post>,
+) -> Result<Vec<PostWithTerms>, Response> {
+    let post_ids = posts.iter().map(|post| post.id).collect::<Vec<_>>();
+    let terms = TaxonomyService::terms_for_posts(database, &post_ids)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    Ok(posts
+        .into_iter()
+        .map(|post| PostWithTerms {
+            terms: terms.get(&post.id).cloned().unwrap_or_default(),
+            post,
+        })
+        .collect())
 }
 
 fn excerpt(markdown: &str, max_characters: usize) -> String {

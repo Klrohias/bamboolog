@@ -9,13 +9,13 @@ use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DerivePartialModel,
     EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    prelude::DateTimeUtc,
+    TransactionTrait, prelude::DateTimeUtc,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     entity,
-    service::{jwt::JwtClaims, user::User},
+    service::{jwt::JwtClaims, taxonomy::TaxonomyService, user::User},
     utils::{ApiResponse, HttpFailibleOperationExts, Pagination, render_markdown},
 };
 
@@ -176,7 +176,12 @@ pub async fn get_post_content(
         None => {
             ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response()
         }
-        Some(post) => ApiResponse::ok(post_detail_response(post)).into_response(),
+        Some(post) => ApiResponse::ok(
+            post_detail_response(&database, post)
+                .await
+                .traced_and_response(|e| tracing::error!("{}", e))?,
+        )
+        .into_response(),
     })
 }
 
@@ -215,7 +220,18 @@ pub async fn delete_post(
             ApiResponse::code_and_message(StatusCode::NOT_FOUND, "No post found").into_response(),
         ),
         Some(post) => {
-            post.delete(&database)
+            let transaction = database
+                .begin()
+                .await
+                .traced_and_response(|e| tracing::error!("{}", e))?;
+            TaxonomyService::delete_post_terms(&transaction, post.id)
+                .await
+                .traced_and_response(|e| tracing::error!("{}", e))?;
+            post.delete(&transaction)
+                .await
+                .traced_and_response(|e| tracing::error!("{}", e))?;
+            transaction
+                .commit()
                 .await
                 .traced_and_response(|e| tracing::error!("{}", e))?;
             Ok(ApiResponse::ok(()).into_response())
@@ -236,6 +252,8 @@ pub async fn create_post(
         .updated_at
         .and_then(DateTimeUtc::from_timestamp_secs)
         .unwrap_or_else(|| created_at.clone());
+    let tags = post_payload.tags.unwrap_or_default();
+    let categories = post_payload.categories.unwrap_or_default();
     let active_model = entity::post::ActiveModel {
         id: ActiveValue::NotSet,
         name: ActiveValue::Set(post_payload.name),
@@ -244,17 +262,24 @@ pub async fn create_post(
         author: ActiveValue::Set(user.id),
         description: ActiveValue::Set(post_payload.description),
         illustration: ActiveValue::Set(post_payload.illustration),
-        tags: ActiveValue::Set(Some(serialize_terms(post_payload.tags.unwrap_or_default()))),
-        categories: ActiveValue::Set(Some(serialize_terms(
-            post_payload.categories.unwrap_or_default(),
-        ))),
         hidden: ActiveValue::Set(Some(post_payload.hidden.unwrap_or(false))),
         created_at: ActiveValue::Set(created_at.clone()),
         updated_at: ActiveValue::Set(Some(updated_at)),
     };
 
-    active_model
-        .insert(&database)
+    let transaction = database
+        .begin()
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    let post = active_model
+        .insert(&transaction)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    TaxonomyService::replace_post_terms(&transaction, post.id, Some(tags), Some(categories))
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    transaction
+        .commit()
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
 
@@ -303,13 +328,8 @@ pub async fn edit_post(
         active_model.illustration = ActiveValue::Set(Some(illustration));
     }
 
-    if let Some(tags) = post_payload.tags {
-        active_model.tags = ActiveValue::Set(Some(serialize_terms(tags)));
-    }
-
-    if let Some(categories) = post_payload.categories {
-        active_model.categories = ActiveValue::Set(Some(serialize_terms(categories)));
-    }
+    let tags = post_payload.tags;
+    let categories = post_payload.categories;
 
     if let Some(hidden) = post_payload.hidden {
         active_model.hidden = ActiveValue::Set(Some(hidden));
@@ -322,16 +342,34 @@ pub async fn edit_post(
             .unwrap_or_else(Utc::now),
     ));
 
+    let transaction = database
+        .begin()
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
     active_model
-        .update(&database)
+        .update(&transaction)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    TaxonomyService::replace_post_terms(&transaction, id, tags, categories)
+        .await
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    transaction
+        .commit()
         .await
         .traced_and_response(|e| tracing::error!("{}", e))?;
 
     Ok(ApiResponse::ok(()))
 }
 
-fn post_detail_response(post: entity::post::Model) -> PostDetailResponse {
-    PostDetailResponse {
+async fn post_detail_response(
+    database: &DatabaseConnection,
+    post: entity::post::Model,
+) -> Result<PostDetailResponse, sea_orm::DbErr> {
+    let terms = TaxonomyService::terms_for_posts(database, &[post.id])
+        .await?
+        .remove(&post.id)
+        .unwrap_or_default();
+    Ok(PostDetailResponse {
         id: post.id,
         title: post.title,
         name: post.name,
@@ -344,25 +382,10 @@ fn post_detail_response(post: entity::post::Model) -> PostDetailResponse {
             .unwrap_or_else(|| post.created_at.clone()),
         description: post.description,
         illustration: post.illustration,
-        tags: deserialize_terms(post.tags),
-        categories: deserialize_terms(post.categories),
+        tags: terms.tags,
+        categories: terms.categories,
         hidden: post.hidden.unwrap_or(false),
-    }
-}
-
-fn serialize_terms(terms: Vec<String>) -> String {
-    let terms = terms
-        .into_iter()
-        .map(|term| term.trim().to_string())
-        .filter(|term| !term.is_empty())
-        .collect::<Vec<_>>();
-    serde_json::to_string(&terms).expect("serializing strings never fails")
-}
-
-pub(crate) fn deserialize_terms(value: Option<String>) -> Vec<String> {
-    value
-        .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
-        .unwrap_or_default()
+    })
 }
 
 #[cfg(test)]
@@ -381,12 +404,10 @@ mod tests {
 
     use crate::{
         entity::{self, user},
-        service::user::User,
+        service::{taxonomy::TaxonomyService, user::User},
     };
 
-    use super::{
-        PostListRequest, create_post, deserialize_terms, get_routes, list_posts, serialize_terms,
-    };
+    use super::{PostListRequest, create_post, get_routes, list_posts};
 
     async fn database_with_post_schema() -> DatabaseConnection {
         let database = Database::connect("sqlite::memory:").await.unwrap();
@@ -395,6 +416,10 @@ mod tests {
         for statement in [
             schema.create_table_from_entity(user::Entity),
             schema.create_table_from_entity(entity::post::Entity),
+            schema.create_table_from_entity(entity::tag::Entity),
+            schema.create_table_from_entity(entity::category::Entity),
+            schema.create_table_from_entity(entity::post_tag::Entity),
+            schema.create_table_from_entity(entity::post_category::Entity),
         ] {
             database.execute(&statement).await.unwrap();
         }
@@ -503,22 +528,15 @@ mod tests {
         assert_eq!(post.author, 1);
         assert_eq!(post.description.as_deref(), Some("A concise description"));
         assert_eq!(post.illustration.as_deref(), Some("/attachments/cover"));
-        assert_eq!(deserialize_terms(post.tags), ["Rust", "Web"]);
-        assert_eq!(deserialize_terms(post.categories), ["Engineering"]);
+        let terms = TaxonomyService::terms_for_posts(&database, &[post.id])
+            .await
+            .unwrap()
+            .remove(&post.id)
+            .unwrap();
+        assert_eq!(terms.tags, ["Rust", "Web"]);
+        assert_eq!(terms.categories, ["Engineering"]);
         assert_eq!(post.hidden, Some(true));
         assert_eq!(post.created_at.timestamp(), 1_700_000_000);
         assert_eq!(post.updated_at.unwrap().timestamp(), 1_700_000_100);
-    }
-
-    #[test]
-    fn serializes_terms_as_a_clean_array() {
-        assert_eq!(
-            serialize_terms(vec![" Rust ".to_string(), String::new(), "Web".to_string()]),
-            r#"["Rust","Web"]"#
-        );
-        assert_eq!(
-            deserialize_terms(Some("not json".to_string())),
-            Vec::<String>::new()
-        );
     }
 }
