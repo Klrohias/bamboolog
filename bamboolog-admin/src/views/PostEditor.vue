@@ -228,6 +228,10 @@ onMounted(fetchStorageEngines)
     padding-inline: 16px;
   }
 
+  .editor-back {
+    padding-left: 0;
+  }
+
   .editor-title-input :deep(.n-input-wrapper) {
     padding-inline: 16px;
   }

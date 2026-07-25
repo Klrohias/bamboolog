@@ -31,29 +31,66 @@
             <n-breadcrumb-item>{{ currentRouteLabel }}</n-breadcrumb-item>
           </n-breadcrumb>
         </div>
-        <n-space class="header-actions" align="center">
-          <n-button quaternary circle @click="settingsStore.toggleTheme">
-            <template #icon>
-              <n-icon v-if="settingsStore.theme === 'dark'"><sunny-outline /></n-icon>
-              <n-icon v-else><moon-outline /></n-icon>
+        <div class="header-actions header-actions--desktop">
+          <n-space align="center">
+            <n-button quaternary circle @click="settingsStore.toggleTheme">
+              <template #icon>
+                <n-icon v-if="settingsStore.theme === 'dark'"><sunny-outline /></n-icon>
+                <n-icon v-else><moon-outline /></n-icon>
+              </template>
+            </n-button>
+            <n-dropdown :options="languageOptions" @select="handleLanguageSelect">
+              <n-button quaternary circle>
+                <template #icon>
+                  <n-icon><language-outline /></n-icon>
+                </template>
+              </n-button>
+            </n-dropdown>
+            <n-dropdown :options="userOptions" @select="handleUserSelect">
+              <n-button quaternary>
+                <template #icon>
+                  <n-icon><person-outline /></n-icon>
+                </template>
+                <span class="user-name">{{ userStore.user?.nickname || userStore.user?.username || 'User' }}</span>
+              </n-button>
+            </n-dropdown>
+          </n-space>
+        </div>
+        <div class="header-actions header-actions--mobile">
+          <n-popover v-model:show="mobileHeaderActionsVisible" trigger="click" placement="bottom-end" :show-arrow="false" :width="208">
+            <template #trigger>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <n-button quaternary circle :aria-label="$t('common.menu')">
+                    <template #icon><n-icon><ellipsis-horizontal-outline /></n-icon></template>
+                  </n-button>
+                </template>
+                {{ $t('common.menu') }}
+              </n-tooltip>
             </template>
-          </n-button>
-          <n-dropdown :options="languageOptions" @select="handleLanguageSelect">
-            <n-button quaternary circle>
-              <template #icon>
-                <n-icon><language-outline /></n-icon>
-              </template>
-            </n-button>
-          </n-dropdown>
-          <n-dropdown :options="userOptions" @select="handleUserSelect">
-            <n-button quaternary>
-              <template #icon>
-                <n-icon><person-outline /></n-icon>
-              </template>
-              <span class="user-name">{{ userStore.user?.nickname || userStore.user?.username || 'User' }}</span>
-            </n-button>
-          </n-dropdown>
-        </n-space>
+            <n-space vertical :size="4">
+              <n-button block quaternary @click="handleMobileThemeToggle">
+                <template #icon>
+                  <n-icon v-if="settingsStore.theme === 'dark'"><sunny-outline /></n-icon>
+                  <n-icon v-else><moon-outline /></n-icon>
+                </template>
+                {{ $t('common.theme') }}
+              </n-button>
+              <n-dropdown :options="languageOptions" placement="left-start" @select="handleMobileLanguageSelect">
+                <n-button block quaternary>
+                  <template #icon><n-icon><language-outline /></n-icon></template>
+                  {{ $t('common.language') }}
+                </n-button>
+              </n-dropdown>
+              <n-dropdown :options="userOptions" placement="left-start" @select="handleUserSelect">
+                <n-button block quaternary>
+                  <template #icon><n-icon><person-outline /></n-icon></template>
+                  {{ userStore.user?.nickname || userStore.user?.username || 'User' }}
+                </n-button>
+              </n-dropdown>
+            </n-space>
+          </n-popover>
+        </div>
       </n-layout-header>
       <n-layout-content :class="['app-content', { 'app-content--immersive': route.meta.immersive === true }]">
         <router-view />
@@ -79,7 +116,8 @@ import {
   CloudOutline,
   ColorPaletteOutline,
   OptionsOutline,
-  MenuOutline
+  MenuOutline,
+  EllipsisHorizontalOutline
 } from '@vicons/ionicons5'
 import { setAuthToken } from '@/api'
 import { useSettingsStore } from '@/stores/settings'
@@ -92,6 +130,7 @@ const route = useRoute()
 const router = useRouter()
 const activeKey = ref<string | null>(null)
 const mobileMenuVisible = ref(false)
+const mobileHeaderActionsVisible = ref(false)
 
 function renderIcon(icon: any) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -198,12 +237,23 @@ function handleLanguageSelect(key: 'zh-CN' | 'en-US') {
   locale.value = key
 }
 
+function handleMobileThemeToggle() {
+  settingsStore.toggleTheme()
+  mobileHeaderActionsVisible.value = false
+}
+
+function handleMobileLanguageSelect(key: 'zh-CN' | 'en-US') {
+  handleLanguageSelect(key)
+  mobileHeaderActionsVisible.value = false
+}
+
 function handleMobileMenuSelect(key: string | number) {
   activeKey.value = String(key)
   mobileMenuVisible.value = false
 }
 
 function handleUserSelect(key: string) {
+  mobileHeaderActionsVisible.value = false
   if (key === 'profile') {
     router.push('/profile')
   } else if (key === 'logout') {
@@ -242,6 +292,10 @@ function handleLogout() {
   display: none;
 }
 
+.header-actions--mobile {
+  display: none;
+}
+
 .app-content {
   padding-inline: 40px;
   padding-block: 30px;
@@ -275,12 +329,17 @@ function handleLogout() {
     display: inline-flex;
   }
 
+  .header-actions--desktop {
+    display: none;
+  }
+
+  .header-actions--mobile {
+    display: block;
+  }
+
   .app-content {
     padding-inline: 16px;
   }
 
-  .user-name {
-    display: none;
-  }
 }
 </style>
