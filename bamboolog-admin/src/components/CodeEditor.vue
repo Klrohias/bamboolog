@@ -1,5 +1,7 @@
 <template>
-  <div ref="host" class="code-editor" :style="{ height }"></div>
+  <div class="code-editor" :style="{ height }">
+    <div ref="host" class="code-editor-host"></div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -8,6 +10,7 @@ import * as monaco from 'monaco-editor/editor/editor.api'
 import editorWorker from 'monaco-editor/editor/editor.worker.js?worker'
 import jsonWorker from 'monaco-editor/language/json/json.worker.js?worker'
 import 'monaco-editor/language/json/monaco.contribution'
+import 'monaco-editor/basic-languages/monaco.contribution'
 import { useSettingsStore } from '@/stores/settings'
 
 const props = withDefaults(defineProps<{
@@ -55,9 +58,13 @@ async function createEditor() {
     formatOnType: true,
     minimap: { enabled: false },
     tabSize: 2,
+    contextmenu: true,
   })
   editor.onDidChangeModelContent(() => {
     emit('update:modelValue', editor?.getValue() ?? '')
+  })
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, () => {
+    editor?.getAction('editor.action.quickCommand')?.run()
   })
 }
 
@@ -81,5 +88,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .code-editor {
   border: 1px solid var(--n-border-color);
+}
+
+.code-editor-host {
+  height: 100%;
 }
 </style>

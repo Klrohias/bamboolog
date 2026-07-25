@@ -54,6 +54,8 @@
         "default_storage": "Use default storage engine",
         "storage_load_failed": "Failed to load image storage engines",
         "image_upload_failed": "Failed to upload image",
+        "editor_milkdown": "Rich Text Editor",
+        "editor_monaco": "Code Editor",
         "update_success": "Post updated",
         "create_success": "Post created",
         "delete_success": "Post deleted",

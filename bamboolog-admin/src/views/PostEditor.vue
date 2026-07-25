@@ -9,7 +9,11 @@
             </template>
             {{ isEdit ? $t('posts.edit_post') : $t('posts.new_post') }}
           </n-button>
-          <n-space size="small">
+          <n-space size="small" align="center">
+            <n-switch v-model:value="useCodeEditor" :disabled="!editorReady">
+              <template #checked>{{ $t('posts.editor_monaco') }}</template>
+              <template #unchecked>{{ $t('posts.editor_milkdown') }}</template>
+            </n-switch>
             <n-button type="primary" :loading="saving" @click="handleSave">{{ $t('common.save') }}</n-button>
             <n-tooltip v-if="isDesktop && settingsCollapsed">
               <template #trigger>
@@ -28,8 +32,9 @@
           :placeholder="$t('posts.title')" />
         <div class="editor-content-field">
           <n-spin v-if="!editorReady" class="editor-loading" size="small" />
-          <MarkdownEditor v-else v-model="form.content" :storage-engine-id="storageEngineId ?? undefined"
+          <MarkdownEditor v-else-if="!useCodeEditor" v-model="form.content" :storage-engine-id="storageEngineId ?? undefined"
             @upload-error="message.error(t('posts.image_upload_failed'))" />
+          <CodeEditor v-else v-model="form.content" language="markdown" />
         </div>
       </n-layout-content>
 
@@ -67,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, defineAsyncComponent, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, type FormInst } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
@@ -76,6 +81,8 @@ import { postsApi } from '@/api/posts'
 import { storageApi, type StorageEngine } from '@/api/storage'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import PostSettingsFields from '@/components/PostSettingsFields.vue'
+
+const CodeEditor = defineAsyncComponent(() => import('@/components/CodeEditor.vue'))
 
 const { t } = useI18n()
 const route = useRoute()
@@ -86,10 +93,11 @@ const formRef = ref<FormInst | null>(null)
 const isEdit = computed(() => !!route.params.id)
 const saving = ref(false)
 const editorReady = ref(false)
+const useCodeEditor = ref(false)
 const storageEngines = ref<StorageEngine[]>([])
 const storageEngineId = ref<number | null>(null)
 const isDesktop = ref(false)
-const settingsCollapsed = ref(false)
+const settingsCollapsed = ref(true)
 let desktopQuery: MediaQueryList | undefined
 
 function handleDesktopQueryChange(event: MediaQueryListEvent) {

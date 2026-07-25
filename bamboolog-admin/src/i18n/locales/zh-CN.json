@@ -54,6 +54,8 @@
         "default_storage": "使用默认存储引擎",
         "storage_load_failed": "加载图片存储引擎失败",
         "image_upload_failed": "图片上传失败",
+        "editor_milkdown": "富文本编辑器",
+        "editor_monaco": "代码编辑器",
         "update_success": "文章已更新",
         "create_success": "文章已创建",
         "delete_success": "文章已删除",
