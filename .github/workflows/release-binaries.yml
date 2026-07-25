@@ -29,11 +29,11 @@ jobs:
             target: aarch64-apple-darwin
             asset: macos-aarch64
             archive: tar.gz
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            asset: windows-x86_64
-            archive: zip
-            binary: bamboolog.exe
+          # - os: windows-latest
+          #   target: x86_64-pc-windows-msvc
+          #   asset: windows-x86_64
+          #   archive: zip
+          #   binary: bamboolog.exe
 
     steps:
       - name: Check out source
