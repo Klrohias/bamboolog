@@ -31,16 +31,16 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     cp target/release/bamboolog /usr/local/bin/bamboolog
 
 FROM alpine:3.22 AS runtime
-RUN apk add --no-cache ca-certificates libgcc && \
+RUN apk add --no-cache ca-certificates libgcc su-exec && \
     addgroup -S bamboolog && \
-    adduser -S -G bamboolog -h /app bamboolog && \
-    mkdir -p /app/config /app/data && \
-    chown -R bamboolog:bamboolog /app
+    adduser -S -G bamboolog -h /app bamboolog
 
 WORKDIR /app
 COPY --from=builder /usr/local/bin/bamboolog /usr/local/bin/bamboolog
+COPY docker/config.toml /usr/local/share/bamboolog/config.toml
+COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
-ENV CONFIG_PATH=/app/config/config.toml
-VOLUME ["/app/data"]
-USER bamboolog
-ENTRYPOINT ["bamboolog"]
+ENV CONFIG_PATH=/app/config.toml
+VOLUME ["/app"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

@@ -1,0 +1,8 @@
+services:
+  bamboolog:
+    build: .
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./app:/app
+    restart: unless-stopped
