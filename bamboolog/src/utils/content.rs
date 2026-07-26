@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 /// Renders Markdown with raw HTML enabled, then removes unsafe markup.
 pub fn render_markdown(source: &str) -> Result<String, markdown::message::Message> {
     let mut options = markdown::Options::gfm();
@@ -7,7 +9,26 @@ pub fn render_markdown(source: &str) -> Result<String, markdown::message::Messag
     let rendered = markdown::to_html_with_options(source, &options)?;
     Ok(ammonia::Builder::default()
         // Syntax highlighters and themes commonly select code by class name.
-        .add_generic_attributes(["class"])
+        .add_generic_attributes(["class", "id"])
+        .add_generic_attribute_prefixes(["aria-", "data-"])
+        .id_prefix(Some("user-content-"))
+        .add_tags(["input"])
+        .add_tag_attribute_values("input", "type", ["checkbox"])
+        .add_tag_attribute_values("input", "checked", [""])
+        .add_tag_attribute_values("input", "disabled", [""])
+        .add_tag_attribute_values("details", "open", [""])
+        // Keep fragment links aligned with the prefixed IDs above.
+        .attribute_filter(|tag, attribute, value| {
+            if tag == "a"
+                && attribute == "href"
+                && value.starts_with('#')
+                && !value.starts_with("#user-content-")
+            {
+                Some(Cow::Owned(format!("#user-content-{}", &value[1..])))
+            } else {
+                Some(Cow::Borrowed(value))
+            }
+        })
         .clean(&rendered)
         .to_string())
 }
@@ -56,5 +77,28 @@ mod tests {
         assert!(!rendered.contains("onerror"));
         assert!(!rendered.contains("javascript:"));
         assert!(rendered.contains("<img src=\"/safe.png\""));
+    }
+
+    #[test]
+    fn preserves_gfm_footnotes_and_task_lists() {
+        let rendered = render_markdown("- [x] Done\n\nA note[^1].\n\n[^1]: Footnote").unwrap();
+
+        assert!(rendered.contains("<input type=\"checkbox\""));
+        assert!(rendered.contains("disabled=\"\""));
+        assert!(rendered.contains("checked=\"\""));
+        assert!(rendered.contains("data-footnote-ref=\"\""));
+        assert!(rendered.contains("aria-describedby=\"footnote-label\""));
+        assert!(rendered.contains("id=\"user-content-fnref-1\""));
+        assert!(rendered.contains("href=\"#user-content-fn-1\""));
+    }
+
+    #[test]
+    fn prefixes_raw_html_anchor_ids_and_links() {
+        let rendered =
+            render_markdown("<a href=\"#details\">Jump</a><h2 id=\"details\">Details</h2>")
+                .unwrap();
+
+        assert!(rendered.contains("href=\"#user-content-details\""));
+        assert!(rendered.contains("id=\"user-content-details\""));
     }
 }
