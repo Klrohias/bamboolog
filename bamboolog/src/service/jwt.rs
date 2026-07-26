@@ -3,11 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use axum::{
     extract::FromRequestParts,
-    http::{StatusCode, request::Parts},
+    http::{HeaderMap, StatusCode, header, request::Parts},
     response::{IntoResponse, Response},
 };
 use axum_extra::{
     extract::TypedHeader,
+    extract::cookie::CookieJar,
     headers::{Authorization, authorization::Bearer},
 };
 use chrono::Utc;
@@ -29,6 +30,15 @@ use crate::{
     service::reloadable::ReloadableService,
     utils::{ApiResponse, FailibleOperationExts},
 };
+
+pub const JWT_COOKIE_NAME: &str = "bamboolog_jwt";
+
+pub fn uses_cookie_authorization(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("cookie"))
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct JwtServiceSettings {
@@ -217,10 +227,18 @@ where
 
     #[instrument(skip_all)]
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let TypedHeader(Authorization(bearer)) =
-            TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state)
-                .await
-                .map_err(|_| AuthError)?;
+        let token = if uses_cookie_authorization(&parts.headers) {
+            CookieJar::from_headers(&parts.headers)
+                .get(JWT_COOKIE_NAME)
+                .map(|cookie| cookie.value().to_owned())
+                .ok_or(AuthError)?
+        } else {
+            let TypedHeader(Authorization(bearer)) =
+                TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state)
+                    .await
+                    .map_err(|_| AuthError)?;
+            bearer.token().to_owned()
+        };
 
         let service = parts
             .extensions
@@ -228,7 +246,7 @@ where
             .expect("JwtService should be configured");
 
         let token_data = service
-            .decode(bearer.token())
+            .decode(token)
             .await
             .traced(|e| tracing::error!("{}", e))
             .map_err(|_| AuthError)?;

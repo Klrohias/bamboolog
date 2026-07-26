@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = { version = "0.8.6", features = ["macros", "multipart"] }
-axum-extra = { version = "0.12.1", features = ["file-stream", "typed-header"] }
+axum-extra = { version = "0.12.1", features = ["cookie", "file-stream", "typed-header"] }
 bcrypt = "0.15.1"
 chrono = "0.4.38"
 clap = { version = "4.5", features = ["derive"] }
