@@ -28,7 +28,7 @@ const CONTENT_SECURITY_POLICY: &str = concat!(
     "frame-ancestors 'self'; ",
     "object-src 'none'; ",
     "script-src 'self' https: 'unsafe-inline' 'unsafe-eval'; ",
-    "style-src 'self' 'unsafe-inline'; ",
+    "style-src 'self' https: 'unsafe-inline'; ",
     "img-src 'self' https: data: blob:; ",
     "font-src 'self' https: data:; ",
     "connect-src 'self' https: wss:; ",
@@ -127,6 +127,8 @@ mod tests {
             CONTENT_SECURITY_POLICY
                 .contains("script-src 'self' https: 'unsafe-inline' 'unsafe-eval'")
         );
+        assert!(CONTENT_SECURITY_POLICY.contains("style-src 'self' https: 'unsafe-inline'"));
         assert!(CONTENT_SECURITY_POLICY.contains("connect-src 'self' https: wss:"));
+        assert!(CONTENT_SECURITY_POLICY.contains("object-src 'none'"));
     }
 }
