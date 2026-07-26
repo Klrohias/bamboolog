@@ -31,6 +31,9 @@
         <n-form-item :label="$t('settings.posts_per_page')">
           <n-input-number v-model:value="settings.site.posts_per_page" :min="1" :max="100" style="width: 100%" />
         </n-form-item>
+        <n-form-item :label="$t('settings.attachment_cache_control')">
+          <n-input v-model:value="settings.site.attachment_cache_control" :placeholder="$t('settings.attachment_cache_control_placeholder')" />
+        </n-form-item>
         <n-button type="primary" @click="saveSettings">{{ $t('common.save') }}</n-button>
       </n-form>
     </n-card>
@@ -56,7 +59,8 @@ const settings = ref<Settings>({
     copyright: '',
     rss_enabled: true,
     sitemap_enabled: true,
-    posts_per_page: 10
+    posts_per_page: 10,
+    attachment_cache_control: 'public, max-age=31536000, immutable'
   }
 })
 
@@ -69,6 +73,7 @@ async function fetchSettings() {
     settings.value.site.rss_enabled ??= true
     settings.value.site.sitemap_enabled ??= true
     settings.value.site.posts_per_page ||= 10
+    settings.value.site.attachment_cache_control ||= 'public, max-age=31536000, immutable'
   } catch (e) {
     message.error(t('settings.fetch_failed'))
   }

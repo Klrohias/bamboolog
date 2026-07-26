@@ -10,6 +10,7 @@ export interface SiteSettings {
     rss_enabled: boolean
     sitemap_enabled: boolean
     posts_per_page: number
+    attachment_cache_control: string
 }
 
 export interface Settings {

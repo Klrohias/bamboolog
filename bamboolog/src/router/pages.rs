@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use axum::{
     Extension, Router,
     extract::{Path, Query},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header::CACHE_CONTROL},
     response::{Html, IntoResponse, Response},
     routing::get,
 };
@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tracing::instrument;
 
 use crate::{
-    config::SiteSettings,
+    config::{DEFAULT_ATTACHMENT_CACHE_CONTROL, SiteSettings},
     entity::post::{Column as PostColumn, Entity as PostEntity, Model as Post},
     service::{
         site_settings::SiteSettingsService,
@@ -546,17 +546,33 @@ async fn serve_attachment(
     Path(hash): Path<String>,
     Extension(db): Extension<DatabaseConnection>,
     Extension(storage): Extension<StorageService>,
+    Extension(site_settings): Extension<SiteSettingsService>,
 ) -> Result<Response, Response> {
-    storage
+    let mut response = storage
         .serve(&db, &hash)
         .await
-        .traced_and_response(|e| tracing::error!("{}", e))
+        .traced_and_response(|e| tracing::error!("{}", e))?;
+    let site = site_settings.read().await;
+    response.headers_mut().insert(
+        CACHE_CONTROL,
+        cache_control_header(&site.attachment_cache_control),
+    );
+    Ok(response)
+}
+
+fn cache_control_header(value: &str) -> HeaderValue {
+    HeaderValue::from_str(value).unwrap_or_else(|_| {
+        tracing::warn!("Invalid attachment cache-control setting; using the default value");
+        HeaderValue::from_static(DEFAULT_ATTACHMENT_CACHE_CONTROL)
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_query_component, excerpt, pagination_context, reading_minutes};
-    use crate::utils::Pagination;
+    use super::{
+        cache_control_header, encode_query_component, excerpt, pagination_context, reading_minutes,
+    };
+    use crate::{config::DEFAULT_ATTACHMENT_CACHE_CONTROL, utils::Pagination};
 
     #[test]
     fn creates_a_short_plain_text_excerpt() {
@@ -580,5 +596,17 @@ mod tests {
         assert_eq!(context["previous_url"], "/tags/Rust?page=1");
         assert_eq!(context["next_url"], "/tags/Rust?page=3");
         assert_eq!(encode_query_component("Rust & Web"), "Rust%20%26%20Web");
+    }
+
+    #[test]
+    fn uses_the_default_cache_control_for_invalid_values() {
+        assert_eq!(
+            cache_control_header("private, max-age=60"),
+            "private, max-age=60"
+        );
+        assert_eq!(
+            cache_control_header("invalid\nvalue"),
+            DEFAULT_ATTACHMENT_CACHE_CONTROL
+        );
     }
 }

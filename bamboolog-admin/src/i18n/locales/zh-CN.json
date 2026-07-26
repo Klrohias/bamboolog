@@ -89,6 +89,8 @@
         "rss_enabled": "启用 RSS 订阅",
         "sitemap_enabled": "启用站点地图",
         "posts_per_page": "每页文章数",
+        "attachment_cache_control": "附件 Cache-Control",
+        "attachment_cache_control_placeholder": "public, max-age=31536000, immutable",
         "current_theme": "当前主题",
         "save_success": "设置已保存",
         "fetch_failed": "获取设置失败"

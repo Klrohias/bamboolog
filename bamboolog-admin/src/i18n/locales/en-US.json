@@ -89,6 +89,8 @@
         "rss_enabled": "Enable RSS feed",
         "sitemap_enabled": "Enable sitemap",
         "posts_per_page": "Posts per page",
+        "attachment_cache_control": "Attachment Cache-Control",
+        "attachment_cache_control_placeholder": "public, max-age=31536000, immutable",
         "current_theme": "Current Theme",
         "save_success": "Settings saved",
         "fetch_failed": "Failed to fetch settings"
