@@ -21,7 +21,20 @@ use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tracing::instrument;
 
-const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src 'self'; frame-src 'none'";
+const CONTENT_SECURITY_POLICY: &str = concat!(
+    "default-src 'self' https: data: blob:; ",
+    "base-uri 'self'; ",
+    "form-action 'self'; ",
+    "frame-ancestors 'self'; ",
+    "object-src 'none'; ",
+    "script-src 'self' https: 'unsafe-inline' 'unsafe-eval'; ",
+    "style-src 'self' 'unsafe-inline'; ",
+    "img-src 'self' https: data: blob:; ",
+    "font-src 'self' https: data:; ",
+    "connect-src 'self' https: wss:; ",
+    "media-src 'self' https: data: blob:; ",
+    "frame-src 'self' https:",
+);
 
 async fn set_security_headers(mut response: Response) -> Response {
     response.headers_mut().insert(
@@ -110,5 +123,10 @@ mod tests {
             response.headers().get("content-security-policy").unwrap(),
             CONTENT_SECURITY_POLICY
         );
+        assert!(
+            CONTENT_SECURITY_POLICY
+                .contains("script-src 'self' https: 'unsafe-inline' 'unsafe-eval'")
+        );
+        assert!(CONTENT_SECURITY_POLICY.contains("connect-src 'self' https: wss:"));
     }
 }
