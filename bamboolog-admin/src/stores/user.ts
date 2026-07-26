@@ -27,8 +27,6 @@ export const useUserStore = defineStore('user', () => {
 
     function logout() {
         user.value = null
-        // setAuthToken(null) will be called by whatever calls logout
-        // or logout can call setAuthToken(null) if imported
     }
 
     return {

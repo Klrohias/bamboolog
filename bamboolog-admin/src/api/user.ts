@@ -14,7 +14,6 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-    token: string
     user: User
 }
 
@@ -28,6 +27,8 @@ export const userApi = {
     login: (data: LoginRequest) => {
         return api.post<ApiResponse<LoginResponse>>('/user/auth', data)
     },
+
+    logout: () => api.post<ApiResponse<void>>('/user/logout'),
 
     getMe: () => {
         return api.get<ApiResponse<User>>('/user/me')

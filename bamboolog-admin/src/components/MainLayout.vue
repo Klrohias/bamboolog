@@ -119,7 +119,8 @@ import {
   MenuOutline,
   EllipsisHorizontalOutline
 } from '@vicons/ionicons5'
-import { setAuthToken } from '@/api'
+import { clearCookieAuth } from '@/api'
+import { userApi } from '@/api/user'
 import { useSettingsStore } from '@/stores/settings'
 import { useUserStore } from '@/stores/user'
 
@@ -261,10 +262,14 @@ function handleUserSelect(key: string) {
   }
 }
 
-function handleLogout() {
-  userStore.logout()
-  setAuthToken(null)
-  router.push('/login')
+async function handleLogout() {
+  try {
+    await userApi.logout()
+  } finally {
+    clearCookieAuth()
+    userStore.logout()
+    router.push('/login')
+  }
 }
 </script>
 

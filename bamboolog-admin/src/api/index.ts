@@ -5,6 +5,7 @@ const baseURL = import.meta.env.VITE_API_BASE || '/api'
 
 const api = axios.create({
     baseURL,
+    withCredentials: true,
     headers: {
         'Content-Type': 'application/json',
     },
@@ -16,14 +17,12 @@ export interface ApiResponse<T> {
     data: T
 }
 
-export function setAuthToken(token: string | null) {
-    if (token) {
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-        localStorage.setItem('token', token)
-    } else {
-        delete api.defaults.headers.common['Authorization']
-        localStorage.removeItem('token')
-    }
+export function useCookieAuth() {
+    api.defaults.headers.common['Authorization'] = 'cookie'
+}
+
+export function clearCookieAuth() {
+    delete api.defaults.headers.common['Authorization']
 }
 
 api.interceptors.response.use(
@@ -37,14 +36,13 @@ api.interceptors.response.use(
             } catch (e) {
                 // Ignore if store cannot be loaded
             }
-            setAuthToken(null)
+            clearCookieAuth()
             router.push('/login')
         }
         return Promise.reject(error)
     }
 )
 
-const saved = localStorage.getItem('token')
-if (saved) setAuthToken(saved)
+useCookieAuth()
 
 export default api

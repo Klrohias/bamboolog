@@ -64,7 +64,7 @@ import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { PersonOutline, LockClosedOutline, SunnyOutline, MoonOutline, LanguageOutline } from '@vicons/ionicons5'
 import { userApi } from '@/api/user'
-import { setAuthToken } from '@/api'
+import { useCookieAuth } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -87,12 +87,11 @@ async function doLogin() {
   }
   loading.value = true
   try {
-    const { data } = await userApi.login({
+    useCookieAuth()
+    await userApi.login({
       username: form.username,
       password: form.password,
     })
-    const token = data.data.token
-    setAuthToken(token)
     await userStore.fetchMe()
     msg.success(t('common.login') + ' ' + t('common.success'))
     router.push('/posts')
