@@ -9,12 +9,27 @@ use crate::{
         theme::ThemeService,
     },
 };
-use axum::{Extension, Router};
+use axum::{
+    Extension, Router,
+    http::{HeaderValue, header},
+    middleware,
+    response::Response,
+};
 use sea_orm::DatabaseConnection;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tracing::instrument;
+
+const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src 'self'; frame-src 'none'";
+
+async fn set_security_headers(mut response: Response) -> Response {
+    response.headers_mut().insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+    );
+    response
+}
 
 #[instrument(skip_all)]
 async fn configure_jwt_service(database: &DatabaseConnection) -> JwtService {
@@ -66,7 +81,8 @@ async fn build_app(config: Arc<ApplicationConfiguration>) -> Router {
             .layer(Extension(site_settings_service))
             .layer(Extension(theme_service))
             .layer(Extension(storage_service))
-            .layer(Extension(service_reloader)),
+            .layer(Extension(service_reloader))
+            .layer(middleware::map_response(set_security_headers)),
     )
 }
 
@@ -78,4 +94,21 @@ pub async fn run(config: Arc<ApplicationConfiguration>) {
 
     let listener = TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{http::StatusCode, response::IntoResponse};
+
+    use super::{CONTENT_SECURITY_POLICY, set_security_headers};
+
+    #[tokio::test]
+    async fn adds_a_content_security_policy_to_responses() {
+        let response = set_security_headers(StatusCode::OK.into_response()).await;
+
+        assert_eq!(
+            response.headers().get("content-security-policy").unwrap(),
+            CONTENT_SECURITY_POLICY
+        );
+    }
 }
