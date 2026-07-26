@@ -111,9 +111,13 @@ fn invalid_credentials_response() -> axum::response::Response {
     ApiResponse::code_and_message(StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
 }
 
-async fn logout_user() -> impl IntoResponse {
-    let cookie = Cookie::build(JWT_COOKIE_NAME).path("/").build();
-    (CookieJar::new().remove(cookie), ApiResponse::ok(()))
+async fn logout_user(cookies: CookieJar) -> impl IntoResponse {
+    let cookie = Cookie::build(JWT_COOKIE_NAME)
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .path("/")
+        .build();
+    (cookies.remove(cookie), ApiResponse::ok(()))
 }
 
 #[instrument(skip(db))]
@@ -318,5 +322,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(cookie_me.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn logout_expires_the_session_cookie() {
+        let response = get_routes()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/logout")
+                    .header(header::COOKIE, "bamboolog_jwt=session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(cookie.starts_with("bamboolog_jwt=;"));
+        assert!(cookie.contains("Max-Age=0"));
+        assert!(cookie.contains("Path=/"));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("SameSite=Strict"));
     }
 }
